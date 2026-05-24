@@ -45,8 +45,8 @@ Full automation of `llama.cpp` update, backup, rollback, and system recovery for
     LLM Update Script v4.6 — DFD Compliant
     Repo: /opt/llm/llama.cpp
 ==================================================
-[INFO]  18:14:03 - Loaded service config: llm.service
-[DEBG]  18:14:03 - ℹ️  Added /usr/local/cuda-12.8/bin to PATH for CUDA detection
+[INFO]  19:42:03 - Loaded service config: llm.service
+[DEBG]  19:42:03 - ℹ️  Added /usr/local/cuda-12.8/bin to PATH for CUDA detection
 
 === NVIDIA P102-100 Compatibility Checklist ===
 +---------------+------------+--------+
@@ -66,28 +66,32 @@ Full automation of `llama.cpp` update, backup, rollback, and system recovery for
 | NCCL (multi-GPU) | OK           | OK     |
 +------------------+--------------+--------+
 
-[INFO]  18:14:03 - Detecting NVIDIA GPUs...
-[DEBG]  18:14:03 - ℹ️  GPU 1: Compute Capability 6.1 → 61
-[OK]    18:14:03 - ✓ Detected 1 GPU(s). Architectures: 61
-[WARN]  18:14:03 - ⚠️  Pascal detected → GGML_NATIVE=OFF
-[INFO]  18:14:04 - Service llm.service is currently ACTIVE
-[OK]    18:14:04 - ✓ Service name saved: llm.service
+[INFO]  19:42:03 - Detecting NVIDIA GPUs...
+[DEBG]  19:42:03 - ℹ️  GPU 1: Compute Capability 6.1 → 61
+[OK]    19:42:03 - ✓ Detected 1 GPU(s). Architectures: 61
+[WARN]  19:42:03 - ⚠️  Pascal detected → GGML_NATIVE=OFF
+[INFO]  19:42:04 - Service llm.service is currently ACTIVE
+[OK]    19:42:04 - ✓ Service name saved: llm.service
 
-Выберите действие:
-  [1] Обновить / Собрать
-  [2] Откат к предыдущей сборке
-  [3] Выход
-Выбор: 1
+Select action:
+  [1] Update / Build
+  [2] Rollback to previous build
+  [3] Exit
+Selection: 1
 
-=== STEP: Обновление llama.cpp ===
+=== STEP: Updating llama.cpp ===
 
-[INFO]  18:14:40 - Stopping service llm.service...
-[INFO]  18:14:41 - Creating backup → /opt/llm/backup/backup_20260524_181441
-[OK]    18:14:54 - ✓ Backup created: backup_20260524_181441
-[OK]    18:14:54 - ✓ OS: Ubuntu 24.04 confirmed
-[INFO]  18:14:55 - Driver: 570.211.01 | GPU: NVIDIA P102-100 | Memory: 10240MB
-[DEBG]  18:14:55 - ℹ️  NCCL already installed
-[OK]    18:14:55 - ✓ npm already installed (10.8.2)
+[INFO]  19:42:11 - Stopping service llm.service...
+[INFO]  19:42:12 - Creating backup → /opt/llm/backup/backup_20260524_194212
+[OK]    19:42:29 - ✓ Backup created: backup_20260524_194212
+[OK]    19:42:29 - ✓ OS: Ubuntu 24.04 confirmed
+[INFO]  19:42:30 - Driver: 570.211.01 | GPU: NVIDIA P102-100 | Memory: 10240MB
+[DEBG]  19:42:30 - ℹ️  NCCL already installed
+[OK]    19:42:30 - ✓ npm already installed (10.8.2)
 
-Выберите версию для сборки:
-  [1] Последняя (master)
+Select version to build:
+  [1] Latest (master)
+  [2] By date (YYYY-MM-DD)
+  [3] By commit
+Choice [1]: 1
+

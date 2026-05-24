@@ -733,11 +733,6 @@ main() {
             stop_service
             create_backup
 
-            validate_os
-            validate_hardware
-            ensure_nccl
-            ensure_nodejs
-
             echo ""
             echo "Select version to build:"
             echo "  [1] Latest (master)"

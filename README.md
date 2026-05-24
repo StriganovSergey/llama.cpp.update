@@ -35,6 +35,38 @@ Full automation of `llama.cpp` update, backup, rollback, and system recovery for
   Restores the last working build automatically if compilation or deployment fails.
 
 ---
+### Key Paths
+```
+| Path                              | Purpose                            |
+|-----------------------------------|------------------------------------|
+| /opt/llm/llama.cpp                | Source code repository (git clone) |
+| /opt/llm/backup                   | Backup snapshots with timestamps   |
+| /opt/llm/backup/build_history.log | Build records log                  |
+| /opt/llm/.service_config          | Service name configuration         |
+| /opt/llm/llama-*                  | Deployed binaries                  |
+```
+
+## Step 1 - edit script configuration
+```bash
+readonly SCRIPT_BASENAME="/opt/llm"
+readonly REPO_DIR="${SCRIPT_BASENAME}/llama.cpp"
+readonly BACKUP_DIR="${SCRIPT_BASENAME}/backup"
+readonly SERVICE_CONFIG="${SCRIPT_BASENAME}/.service_config"
+readonly BUILD_HISTORY="${BACKUP_DIR}/build_history.log"
+
+export SERVICE_NAME="${SERVICE_NAME:-llm.service}"
+
+# Hardware requirements
+readonly REQUIRED_DRIVER="570.211.01"
+readonly REQUIRED_CUDA="12.8"
+readonly GPU_NAME_EXPECTED="P102-100"
+readonly GPU_MEMORY_EXPECTED="10240"
+```
+
+## Step 2 - run
+```bash
+$ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
+```
 
 ## Example Console Output
 

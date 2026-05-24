@@ -84,10 +84,6 @@ Selection: 1
 [INFO]  19:42:11 - Stopping service llm.service...
 [INFO]  19:42:12 - Creating backup → /opt/llm/backup/backup_20260524_194212
 [OK]    19:42:29 - ✓ Backup created: backup_20260524_194212
-[OK]    19:42:29 - ✓ OS: Ubuntu 24.04 confirmed
-[INFO]  19:42:30 - Driver: 570.211.01 | GPU: NVIDIA P102-100 | Memory: 10240MB
-[DEBG]  19:42:30 - ℹ️  NCCL already installed
-[OK]    19:42:30 - ✓ npm already installed (10.8.2)
 
 Select version to build:
   [1] Latest (master)

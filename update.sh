@@ -613,7 +613,7 @@ ensure_nvidia_driver() {
 # ====================== HARDWARE VALIDATION ======================
 validate_os() {
     if ! grep -q 'VERSION_ID="24.04"' /etc/os-release; then
-        log_error "Требуется Ubuntu 24.04"
+        log_error "Ubuntu 24.04 required"
         return 1
     fi
     log_success "OS: Ubuntu 24.04 confirmed"
@@ -721,15 +721,15 @@ main() {
     check_initial_service_status
 
     echo ""
-    echo "Выберите действие:"
-    echo "  [1] Обновить / Собрать"
-    echo "  [2] Откат к предыдущей сборке"
-    echo "  [3] Выход"
-    read -p "Выбор: " action
+    echo "Select action:"
+    echo "  [1] Update / Build"
+    echo "  [2] Rollback to previous build"
+    echo "  [3] Exit"
+    read -p "Selection: " action
 
     case "$action" in
         1)
-            log_step "Обновление llama.cpp"
+            log_step "Updating llama.cpp"
             stop_service
             create_backup
 
@@ -739,18 +739,18 @@ main() {
             ensure_nodejs
 
             echo ""
-            echo "Выберите версию для сборки:"
-            echo "  [1] Последняя (master)"
-            echo "  [2] По дате (YYYY-MM-DD)"
-            echo "  [3] По коммиту"
-            read -p "Выбор [1]: " git_choice
+            echo "Select version to build:"
+            echo "  [1] Latest (master)"
+            echo "  [2] By date (YYYY-MM-DD)"
+            echo "  [3] By commit"
+            read -p "Choice [1]: " git_choice
             git_choice=${git_choice:-1}
 
             local git_target="latest"
             if [[ "$git_choice" == "2" ]]; then
-                read -p "Введите дату (YYYY-MM-DD): " git_target
+                read -p "Enter date (YYYY-MM-DD): " git_target
             elif [[ "$git_choice" == "3" ]]; then
-                read -p "Введите хэш коммита: " git_target
+                read -p "Enter commit hash: " git_target
             fi
 
             git_checkout_target "$git_target"
@@ -761,23 +761,23 @@ main() {
             ;;
 
         2)
-            log_step "Откат к предыдущей сборке"
+            log_step "Rollback to previous build"
             restore_backup_interactive
             start_service
             ;;
 
         3)
-            log_info "Выход без изменений"
+            log_info "Exiting without changes"
             exit 0
             ;;
 
         *)
-            log_error "Неверный выбор"
+            log_error "Invalid selection"
             exit 1
             ;;
     esac
 
-    log_success "Операция завершена успешно"
+    log_success "Operation completed successfully"
 }
 
 main "$@"

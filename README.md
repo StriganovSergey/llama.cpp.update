@@ -131,5 +131,29 @@ From https://github.com/ggerganov/llama.cpp
  * [new tag]           b9309      -> b9309
  * [new tag]           b9310      -> b9310
  * [new tag]           b9311      -> b9311
+ 
 ....
+
+[100%] Built target llama-server
+[  0%] Built target cpp-httplib
+[  3%] Built target ggml-base
+[  3%] Built target llama-common-base
+[  7%] Built target ggml-cpu
+[ 52%] Built target ggml-cuda
+[ 52%] Built target ggml
+[ 91%] Built target llama
+[100%] Built target llama-common
+[100%] Building CXX object tools/gguf-split/CMakeFiles/llama-gguf-split.dir/gguf-split.cpp.o
+[100%] Linking CXX executable ../../bin/llama-gguf-split
+[100%] Built target llama-gguf-split
+[OK]    15:16:07 - ✓ Build completed successfully
+[INFO]  15:16:07 - Deploying binaries from /opt/llm/llama.cpp/build/bin to /opt/llm
+[OK]    15:16:07 - ✓ Binaries deployed to /opt/llm
+[INFO]  15:16:07 - Verifying deployed binaries...
+[OK]    15:16:09 - ✓ Binary verification passed (--version)
+[INFO]  15:16:09 - Build record saved to /opt/llm/backup/build_history.log
+[INFO]  15:16:09 - Starting service llm.service...
+[OK]    15:16:12 - ✓ Service started successfully
+[OK]    15:16:12 - ✓ Operation completed successfully
+
 

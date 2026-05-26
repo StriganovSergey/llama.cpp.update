@@ -74,11 +74,10 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 
 ```text
 ==================================================
-    LLM Update Script v4.6 — DFD Compliant
+    LLM Update Script v4.7 — DFD Compliant
     Repo: /opt/llm/llama.cpp
 ==================================================
-[INFO]  19:42:03 - Loaded service config: llm.service
-[DEBG]  19:42:03 - ℹ️  Added /usr/local/cuda-12.8/bin to PATH for CUDA detection
+[INFO]  14:52:37 - Loaded service config: llm.service
 
 === NVIDIA P102-100 Compatibility Checklist ===
 +---------------+------------+--------+
@@ -97,13 +96,11 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 | npm              | 10.8.2       | OK     |
 | NCCL (multi-GPU) | OK           | OK     |
 +------------------+--------------+--------+
-
-[INFO]  19:42:03 - Detecting NVIDIA GPUs...
-[DEBG]  19:42:03 - ℹ️  GPU 1: Compute Capability 6.1 → 61
-[OK]    19:42:03 - ✓ Detected 1 GPU(s). Architectures: 61
-[WARN]  19:42:03 - ⚠️  Pascal detected → GGML_NATIVE=OFF
-[INFO]  19:42:04 - Service llm.service is currently ACTIVE
-[OK]    19:42:04 - ✓ Service name saved: llm.service
+[INFO]  14:52:38 - Detecting NVIDIA GPUs...
+[OK]    14:52:38 - ✓ Detected 1 GPU(s). Architectures: 61
+[WARN]  14:52:38 - ⚠️  Pascal detected → GGML_NATIVE=OFF
+[INFO]  14:52:39 - Service llm.service is currently ACTIVE
+[OK]    14:52:39 - ✓ Service name saved: llm.service
 
 Select action:
   [1] Update / Build
@@ -113,13 +110,26 @@ Selection: 1
 
 === STEP: Updating llama.cpp ===
 
-[INFO]  19:42:11 - Stopping service llm.service...
-[INFO]  19:42:12 - Creating backup → /opt/llm/backup/backup_20260524_194212
-[OK]    19:42:29 - ✓ Backup created: backup_20260524_194212
+[INFO]  14:52:43 - Stopping service llm.service...
+[INFO]  14:52:44 - Creating backup → /opt/llm/backup/backup_20260526_145244
+[OK]    14:53:00 - ✓ Backup created: backup_20260526_145244
 
 Select version to build:
   [1] Latest (master)
   [2] By date (YYYY-MM-DD)
   [3] By commit
 Choice [1]: 1
+[INFO]  14:53:05 - Pulling latest version...
+remote: Enumerating objects: 1938, done.
+remote: Counting objects: 100% (663/663), done.
+remote: Compressing objects: 100% (234/234), done.
+Receiving objects: 100% (352/352), 124.68 KiB | 8.91 MiB/s, done.
+remote: Total 352 (delta 285), reused 170 (delta 113), pack-reused 0 (from 0)
+Resolving deltas: 100% (285/285), completed with 150 local objects.
+From https://github.com/ggerganov/llama.cpp
+   549b9d84..5190c2ea  master     -> origin/master
+ * [new tag]           b9309      -> b9309
+ * [new tag]           b9310      -> b9310
+ * [new tag]           b9311      -> b9311
+....
 

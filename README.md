@@ -72,7 +72,7 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 
 ```text
 ==================================================
-    LLM Update Script v5.0 — DFD Compliant
+    LLM Update Script v5.3 — DFD Compliant
     Repo: /opt/llm/llama.cpp
 ==================================================
 [INFO]  17:46:25 - Loaded service config: llm.service

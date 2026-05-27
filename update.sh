@@ -1,10 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# Unified Update Script v5.0 — DFD Compliant Edition (Enhanced Diagnostics)
+# Unified Update Script v5.3 — DFD Compliant Edition (Fixed Backup Restore)
 # Purpose: Full automation of llama.cpp update, backup, rollback and system
 #          recovery for Pascal (P102-100) and mixed GPU configurations.
 #          FIXES: Lock file, build tools check, detailed deployment diagnostics,
-#                 retry option instead of forced rollback.
+#                 retry option instead of forced rollback, --until for date selection,
+#                 full compilation flags logging, auto-deploy on rollback,
+#                 FIXED backup restore path parsing.
 # =============================================================================
 # <PLAN>
 # 1. Configuration block (all constants)
@@ -21,7 +23,8 @@
 # 12. Main orchestration with strict error handling
 #
 # Risks mitigated: concurrent execution, missing tools, deployment failures,
-# unclear error messages, forced rollback without retry.
+# unclear error messages, forced rollback without retry, incomplete build logs,
+# missing deployment after rollback, broken backup restore path parsing.
 # </PLAN>
 
 # [RULE_MANDATORY_COMPLIANCE] + [RULE_STRICTNESS]
@@ -35,7 +38,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ====================== CONFIGURATION (DFD: RULE_CONFIG_EXEC_SEPARATION) ======================
-readonly SCRIPT_VERSION="5.0"
+readonly SCRIPT_VERSION="5.3"
 readonly SCRIPT_BASENAME="/opt/llm"
 readonly REPO_DIR="${SCRIPT_BASENAME}/llama.cpp"
 readonly BACKUP_DIR="${SCRIPT_BASENAME}/backup"
@@ -61,6 +64,16 @@ LAST_BACKUP_PATH=""
 # Track deployment error details for diagnostics
 DEPLOY_ERROR_REASON=""
 DEPLOY_ERROR_DETAILS=""
+
+# Track build details for logging
+BUILD_TIMESTAMP=""
+BUILD_COMMIT=""
+BUILD_COMMIT_DATE=""
+BUILD_CMAKE_ARGS=""
+BUILD_MAKE_ARGS=""
+
+# Track if service was stopped (for auto-restart on rollback)
+SERVICE_WAS_STOPPED=false
 
 # ====================== LOCK FILE MANAGEMENT ======================
 acquire_lock() {
@@ -607,6 +620,7 @@ stop_service() {
     if ${SCRIPT_STATE["SERVICE_ACTIVE"]}; then
         log_info "Stopping service ${SERVICE_NAME}..."
         sudo systemctl stop "$SERVICE_NAME" || { log_error "Failed to stop service"; return 1; }
+        SERVICE_WAS_STOPPED=true
     fi
     return 0
 }
@@ -686,12 +700,14 @@ list_backups() {
     printf "%-3s %-30s %-15s\n" "ID" "Name" "Size"
     echo "----------------------------------------"
     local count=0
-    while IFS= read -r dir; do
+    while IFS= read -r line; do
         ((count++))
+        # Извлекаем только путь (вторая часть строки после timestamp)
+        local dir=$(echo "$line" | awk '{print $2}')
         local name=$(basename "$dir")
         local size=$(du -sh "$dir" 2>/dev/null | cut -f1)
         printf "%-3s %-30s %-15s\n" "$count" "$name" "$size"
-    done < <(find "${BACKUP_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn)
+    done < <(find "${BACKUP_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -rn)
     [[ $count -gt 0 ]]
 }
 
@@ -702,26 +718,50 @@ restore_backup_interactive() {
     local target_backup=""
     local count=0
 
-    while IFS= read -r dir; do
+    while IFS= read -r line; do
         ((count++))
         if [[ $count -eq $selected_id ]]; then
-            target_backup="$dir"
+            # ИЗВЛЕКАЕМ ТОЛЬКО ПУТЬ (вторая часть строки)
+            target_backup=$(echo "$line" | awk '{print $2}')
             break
         fi
-    done < <(find "${BACKUP_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn)
+    done < <(find "${BACKUP_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -rn)
 
     if [ -z "$target_backup" ]; then
         log_error "Invalid backup ID"
         return 1
     fi
 
+    log_info "Selected backup: $(basename "$target_backup")"
+    log_info "Backup path: $target_backup"
+
+    if [ ! -d "$target_backup" ]; then
+        log_error "Backup directory does not exist: $target_backup"
+        return 1
+    fi
+
     read -p "Restore $(basename "$target_backup")? [y/N] " confirm
     [[ "$confirm" =~ ^[Yy]$ ]] || return 0
 
+    log_info "Removing existing repo directory..."
     rm -rf "${REPO_DIR}"
-    cp -ra "$target_backup" "${REPO_DIR}"
-    log_success "Successfully restored from $(basename "$target_backup")"
-    return 0
+    
+    log_info "Copying backup to ${REPO_DIR}..."
+    if cp -ra "$target_backup" "${REPO_DIR}" 2>&1; then
+        log_success "Successfully restored from $(basename "$target_backup")"
+        
+        # Проверка: существует ли каталог после копирования
+        if [ -d "$REPO_DIR" ]; then
+            log_success "Verification: ${REPO_DIR} exists"
+            return 0
+        else
+            log_error "Verification failed: ${REPO_DIR} does not exist after copy"
+            return 1
+        fi
+    else
+        log_error "Failed to copy backup to ${REPO_DIR}"
+        return 1
+    fi
 }
 
 # Restore specific backup path (used for automatic rollback)
@@ -753,14 +793,21 @@ git_checkout_target() {
     elif [[ "$target" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
         log_info "Rolling back to date: $target"
         git fetch --all
-        local commit=$(git rev-list -n 1 --before="$target 23:59:59" origin/master 2>/dev/null || \
-                       git rev-list -n 1 --before="$target 23:59:59" origin/main)
+        
+        # ИСПРАВЛЕНО: Используем --until вместо --before
+        local commit=$(git rev-list -n 1 --until="$target 23:59:59" origin/master 2>/dev/null || \
+                       git rev-list -n 1 --until="$target 23:59:59" origin/main)
+        
         if [ -z "$commit" ]; then
             log_error "No commit found for date $target"
             return 1
         fi
+        
+        # Показать реальную дату коммита
+        local commit_date=$(git show -s --format=%cd --date=short "$commit")
+        log_success "Rolled back to commit from $commit_date"
+        
         git reset --hard "$commit"
-        log_success "Rolled back to commit from $(git show -s --format=%cd --date=short "$commit")"
     else
         log_info "Checking out commit: $target"
         git reset --hard "$target"
@@ -872,6 +919,30 @@ perform_build() {
 
     log_info "Using nvcc: $nvcc_path"
     log_info "Building with architectures: ${CMAKE_CUDA_ARCHITECTURES}"
+
+    # Собираем все флаги CMake для логирования
+    local cmake_args="-DCMAKE_CUDA_COMPILER=${nvcc_path} \
+        -DCMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES} \
+        -DGGML_CUDA=ON \
+        -DGGML_CURL=ON \
+        -DGGML_CUDA_FA_ALL_QUANTS=ON \
+        -DGGML_NATIVE=${GGML_NATIVE} \
+        -DCMAKE_CUDA_FLAGS=-Wno-deprecated-gpu-targets \
+        -DCMAKE_BUILD_TYPE=Release"
+
+    # Сохраняем флаги для логирования
+    BUILD_CMAKE_ARGS="$cmake_args"
+
+    log_info "Starting compilation..."
+    log_info "Build timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+    
+    # Получаем информацию о коммите
+    BUILD_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    BUILD_COMMIT_DATE=$(git show -s --format=%ci HEAD 2>/dev/null || echo "unknown")
+    
+    log_info "Commit: ${BUILD_COMMIT} (${BUILD_COMMIT_DATE})"
+    log_info "CMake flags: ${BUILD_CMAKE_ARGS}"
+    log_info "Make flags: -j$(nproc) --target llama-cli llama-server llama-gguf-split"
 
     cmake -S . -B "$build_dir" \
         -DCMAKE_CUDA_COMPILER="${nvcc_path}" \
@@ -1064,6 +1135,37 @@ verify_binaries() {
         log_error "Try: $binary_path --help"
         return 1
     fi
+}
+
+# ====================== ROLLBACK COMPLETION (NEW) ======================
+complete_rollback() {
+    # Step 1: Deploy binaries from restored source
+    log_step "Completing rollback: Deploying binaries..."
+    if ! deploy_binaries; then
+        log_error "Rollback deployment failed"
+        handle_deployment_failure
+        return 1
+    fi
+
+    # Step 2: Verify binaries
+    if ! verify_binaries; then
+        log_error "Rollback verification failed"
+        return 1
+    fi
+
+    # Step 3: Start service if it was stopped
+    if [ "$SERVICE_WAS_STOPPED" = "true" ] || ${SCRIPT_STATE["SERVICE_ACTIVE"]}; then
+        if ! start_service; then
+            log_error "Service start failed after rollback"
+            return 1
+        fi
+    fi
+
+    # Step 4: Display service status
+    display_service_status
+
+    log_success "Rollback completed successfully"
+    return 0
 }
 
 # ====================== DEPLOYMENT RECOVERY ======================
@@ -1259,9 +1361,26 @@ main() {
 
         2)
             log_step "Rollback to previous build"
-            restore_backup_interactive
-            start_service
-            display_service_status
+            
+            # Stop service first
+            if ! stop_service; then
+                log_warn "Failed to stop service (may not be running)"
+            fi
+            
+            # Restore backup
+            if ! restore_backup_interactive; then
+                log_error "Rollback failed"
+                release_lock
+                exit 1
+            fi
+            
+            # Complete rollback (deploy, verify, start service)
+            if ! complete_rollback; then
+                log_error "Rollback completion failed"
+                release_lock
+                exit 1
+            fi
+            
             release_lock
             exit 0
             ;;

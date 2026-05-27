@@ -70,14 +70,12 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 
 ## Example Console Output
 
-
-
 ```text
 ==================================================
-    LLM Update Script v4.7 — DFD Compliant
+    LLM Update Script v5.0 — DFD Compliant
     Repo: /opt/llm/llama.cpp
 ==================================================
-[INFO]  14:52:37 - Loaded service config: llm.service
+[INFO]  17:46:25 - Loaded service config: llm.service
 
 === NVIDIA P102-100 Compatibility Checklist ===
 +---------------+------------+--------+
@@ -92,15 +90,17 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 | Component        | Version      | Status |
 +------------------+--------------+--------+
 | OS               | Ubuntu 24.04 | OK     |
-| Node.js          | v20.20.2     | OK     |
-| npm              | 10.8.2       | OK     |
+| Node.js          | v24.15.0     | OK     |
+| npm              | 11.12.1      | OK     |
 | NCCL (multi-GPU) | OK           | OK     |
 +------------------+--------------+--------+
-[INFO]  14:52:38 - Detecting NVIDIA GPUs...
-[OK]    14:52:38 - ✓ Detected 1 GPU(s). Architectures: 61
-[WARN]  14:52:38 - ⚠️  Pascal detected → GGML_NATIVE=OFF
-[INFO]  14:52:39 - Service llm.service is currently ACTIVE
-[OK]    14:52:39 - ✓ Service name saved: llm.service
+[INFO]  17:46:27 - Checking build tools...
+[OK]    17:46:28 - ✓ All build tools are installed
+[INFO]  17:46:28 - Detecting NVIDIA GPUs...
+[OK]    17:46:28 - ✓ Detected 6 GPU(s). Architectures: 61;61;61;61;61;61
+[WARN]  17:46:28 - ⚠️  Pascal detected → GGML_NATIVE=OFF
+[INFO]  17:46:29 - Service llm.service is currently ACTIVE
+[OK]    17:46:29 - ✓ Service name saved: llm.service
 
 Select action:
   [1] Update / Build
@@ -110,34 +110,34 @@ Selection: 1
 
 === STEP: Updating llama.cpp ===
 
-[INFO]  14:52:43 - Stopping service llm.service...
-[INFO]  14:52:44 - Creating backup → /opt/llm/backup/backup_20260526_145244
-[OK]    14:53:00 - ✓ Backup created: backup_20260526_145244
+[INFO]  17:46:38 - Stopping service llm.service...
+[INFO]  17:48:09 - Creating backup → /opt/llm/backup/backup_20260527_174809
+[OK]    17:49:40 - ✓ Backup created: backup_20260527_174809
 
 Select version to build:
   [1] Latest (master)
   [2] By date (YYYY-MM-DD)
   [3] By commit
 Choice [1]: 1
-[INFO]  14:53:05 - Pulling latest version...
-remote: Enumerating objects: 1938, done.
-remote: Counting objects: 100% (663/663), done.
-remote: Compressing objects: 100% (234/234), done.
-Receiving objects: 100% (352/352), 124.68 KiB | 8.91 MiB/s, done.
-remote: Total 352 (delta 285), reused 170 (delta 113), pack-reused 0 (from 0)
-Resolving deltas: 100% (285/285), completed with 150 local objects.
+[INFO]  17:58:47 - Pulling latest version...
+remote: Enumerating objects: 370, done.
+remote: Counting objects: 100% (126/126), done.
+remote: Compressing objects: 100% (32/32), done.
+remote: Total 50 (delta 42), reused 25 (delta 18), pack-reused 0 (from 0)
+Unpacking objects: 100% (50/50), 23.61 KiB | 241.00 KiB/s, done.
 From https://github.com/ggerganov/llama.cpp
-   549b9d84..5190c2ea  master     -> origin/master
- * [new tag]           b9309      -> b9309
- * [new tag]           b9310      -> b9310
- * [new tag]           b9311      -> b9311
+   837bb6b4..aa50b2c2  master     -> origin/master
+ * [new tag]           b9365      -> b9365
+ * [new tag]           b9366      -> b9366
+ * [new tag]           b9367      -> b9367
  
 ....
 
+[100%] Linking CXX executable ../../bin/llama-server
 [100%] Built target llama-server
+[  0%] Built target llama-common-base
 [  0%] Built target cpp-httplib
 [  3%] Built target ggml-base
-[  3%] Built target llama-common-base
 [  7%] Built target ggml-cpu
 [ 52%] Built target ggml-cuda
 [ 52%] Built target ggml
@@ -146,14 +146,31 @@ From https://github.com/ggerganov/llama.cpp
 [100%] Building CXX object tools/gguf-split/CMakeFiles/llama-gguf-split.dir/gguf-split.cpp.o
 [100%] Linking CXX executable ../../bin/llama-gguf-split
 [100%] Built target llama-gguf-split
-[OK]    15:16:07 - ✓ Build completed successfully
-[INFO]  15:16:07 - Deploying binaries from /opt/llm/llama.cpp/build/bin to /opt/llm
-[OK]    15:16:07 - ✓ Binaries deployed to /opt/llm
-[INFO]  15:16:07 - Verifying deployed binaries...
-[OK]    15:16:09 - ✓ Binary verification passed (--version)
-[INFO]  15:16:09 - Build record saved to /opt/llm/backup/build_history.log
-[INFO]  15:16:09 - Starting service llm.service...
-[OK]    15:16:12 - ✓ Service started successfully
-[OK]    15:16:12 - ✓ Operation completed successfully
+[OK]    18:09:28 - ✓ Build completed successfully
+[INFO]  18:09:28 - Starting deployment...
+[INFO]  18:09:28 - Deploying binaries from /opt/llm/llama.cpp/build/bin to /opt/llm
+[OK]    18:09:28 - ✓ Binaries deployed to /opt/llm (3 files)
+[INFO]  18:09:28 - Verifying deployed binaries...
+[OK]    18:09:34 - ✓ Binary verification passed (--version)
+[INFO]  18:09:35 - Build record saved to /opt/llm/backup/build_history.log
+[INFO]  18:09:35 - Starting service llm.service...
+[OK]    18:09:38 - ✓ Service started successfully
+[INFO]  18:09:38 - Displaying service status...
+
+=== SERVICE STATUS: llm.service ===
+
+● llm.service - Local LLM Service
+     Loaded: loaded (/etc/systemd/system/llm.service; enabled; preset: enabled)
+     Active: active (running) since Wed 2026-05-27 18:09:35 UTC; 3s ago
+   Main PID: 922022 (bash)
+      Tasks: 24 (limit: 37997)
+     Memory: 382.8M (peak: 387.1M)
+        CPU: 1.640s
+     CGroup: /system.slice/llm.service
+             ├─922022 /bin/bash /opt/llm/run_llm.sh
+             └─922024 /opt/llm/llama-server -m 
+			 ...
+			 
+[OK]    18:09:38 - ✓ Operation completed successfully
 
 

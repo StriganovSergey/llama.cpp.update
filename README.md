@@ -72,7 +72,7 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 
 ```text
 ==================================================
-    LLM Update Script v5.3 — DFD Compliant
+    LLM Update Script v5.5 — DFD Compliant
     Repo: /opt/llm/llama.cpp
 ==================================================
 [INFO]  17:46:25 - Loaded service config: llm.service
@@ -172,5 +172,21 @@ From https://github.com/ggerganov/llama.cpp
 			 ...
 			 
 [OK]    18:09:38 - ✓ Operation completed successfully
+```
 
-
+## Example build_history.log
+```text
+==================================================
+Build Record: 2026-05-28 09:20:19
+==================================================
+Commit: 09e7b76c
+Commit Date: 2026-05-28 10:55:42 +0200
+--------------------------------------------------
+System Information:
+  GPU: NVIDIA P102-100
+  Driver: 570.211.01
+  CUDA Toolkit: 12.8
+--------------------------------------------------
+Full Compilation Flags:
+  CMake flags: -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc         -DCMAKE_CUDA_ARCHITECTURES=61         -DGGML_CUDA=ON         -DGGML_CURL=ON         -DGGML_CUDA_FA_ALL_QUANTS=ON         -DGGML_NATIVE=OFF         -DCMAKE_CUDA_FLAGS=-Wno-deprecated-gpu-targets         -DCMAKE_BUILD_TYPE=Release
+  Make flags: -j4 --target llama-cli llama-server llama-gguf-split

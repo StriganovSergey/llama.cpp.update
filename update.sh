@@ -1,12 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# Unified Update Script v5.3 — DFD Compliant Edition (Fixed Backup Restore)
+# Unified Update Script v5.5 — DFD Compliant Edition (Clean Build Log)
 # Purpose: Full automation of llama.cpp update, backup, rollback and system
 #          recovery for Pascal (P102-100) and mixed GPU configurations.
 #          FIXES: Lock file, build tools check, detailed deployment diagnostics,
 #                 retry option instead of forced rollback, --until for date selection,
 #                 full compilation flags logging, auto-deploy on rollback,
-#                 FIXED backup restore path parsing.
+#                 FIXED backup restore path parsing, CLEAN BUILD LOG FORMAT.
 # =============================================================================
 # <PLAN>
 # 1. Configuration block (all constants)
@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ====================== CONFIGURATION (DFD: RULE_CONFIG_EXEC_SEPARATION) ======================
-readonly SCRIPT_VERSION="5.3"
+readonly SCRIPT_VERSION="5.5"
 readonly SCRIPT_BASENAME="/opt/llm"
 readonly REPO_DIR="${SCRIPT_BASENAME}/llama.cpp"
 readonly BACKUP_DIR="${SCRIPT_BASENAME}/backup"
@@ -653,20 +653,43 @@ display_service_status() {
     return 0
 }
 
-# ====================== BUILD HISTORY ======================
+# ====================== BUILD HISTORY (CLEANED FORMAT) ======================
 save_build_log() {
     mkdir -p "${BACKUP_DIR}"
+    
+    # Получаем текущий коммит и дату
     local commit=$(cd "${REPO_DIR}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-
+    local commit_date=$(cd "${REPO_DIR}" 2>/dev/null && git show -s --format=%ci HEAD 2>/dev/null || echo "unknown")
+    local build_date=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    # Получаем информацию о системе
+    local driver_version=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n1 2>/dev/null || echo 'unknown')
+    local gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n1 2>/dev/null || echo 'unknown')
+    
+    # Формируем полный набор ключей сборки
+    local cmake_flags_line="CMake flags: ${BUILD_CMAKE_ARGS}"
+    local make_flags_line="Make flags: ${BUILD_MAKE_ARGS}"
+    local cuda_version_line="CUDA Toolkit: ${REQUIRED_CUDA}"
+    
     {
-        echo "=== Build $(date '+%Y-%m-%d %H:%M:%S') ==="
-        echo "Commit: $commit"
-        echo "CUDA Architectures: ${CMAKE_CUDA_ARCHITECTURES}"
-        echo "GGML_NATIVE: ${GGML_NATIVE}"
-        echo "CUDA: ${REQUIRED_CUDA}"
-        echo "Driver: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n1 2>/dev/null || echo 'unknown')"
-        echo "----------------------------------------"
+        echo "=================================================="
+        echo "Build Record: ${build_date}"
+        echo "=================================================="
+        echo "Commit: ${commit}"
+        echo "Commit Date: ${commit_date}"
+        echo "--------------------------------------------------"
+        echo "System Information:"
+        echo "  GPU: ${gpu_name}"
+        echo "  Driver: ${driver_version}"
+        echo "  ${cuda_version_line}"
+        echo "--------------------------------------------------"
+        echo "Full Compilation Flags:"
+        echo "  ${cmake_flags_line}"
+        echo "  ${make_flags_line}"
+        echo "=================================================="
+        echo ""
     } >> "${BUILD_HISTORY}"
+    
     log_info "Build record saved to ${BUILD_HISTORY}"
 }
 
@@ -932,17 +955,16 @@ perform_build() {
 
     # Сохраняем флаги для логирования
     BUILD_CMAKE_ARGS="$cmake_args"
-
-    log_info "Starting compilation..."
-    log_info "Build timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
-    
-    # Получаем информацию о коммите
+    BUILD_MAKE_ARGS="-j$(nproc) --target llama-cli llama-server llama-gguf-split"
+    BUILD_TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
     BUILD_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
     BUILD_COMMIT_DATE=$(git show -s --format=%ci HEAD 2>/dev/null || echo "unknown")
     
+    log_info "Starting compilation..."
+    log_info "Build timestamp: ${BUILD_TIMESTAMP}"
     log_info "Commit: ${BUILD_COMMIT} (${BUILD_COMMIT_DATE})"
     log_info "CMake flags: ${BUILD_CMAKE_ARGS}"
-    log_info "Make flags: -j$(nproc) --target llama-cli llama-server llama-gguf-split"
+    log_info "Make flags: ${BUILD_MAKE_ARGS}"
 
     cmake -S . -B "$build_dir" \
         -DCMAKE_CUDA_COMPILER="${nvcc_path}" \
@@ -1341,7 +1363,7 @@ main() {
                 exit 1
             fi
 
-            # 7. Save Log
+            # 7. Save Log (CLEANED FORMAT)
             save_build_log
 
             # 8. Start Service

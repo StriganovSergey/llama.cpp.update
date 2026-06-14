@@ -1,30 +1,43 @@
 #!/bin/bash
 # =============================================================================
-# Unified Update Script v5.5 — DFD Compliant Edition (Clean Build Log)
+# Unified Update Script v6.2 — DFD Compliant Edition (Clean Build Log)
 # Purpose: Full automation of llama.cpp update, backup, rollback and system
 #          recovery for Pascal (P102-100) and mixed GPU configurations.
 #          FIXES: Lock file, build tools check, detailed deployment diagnostics,
 #                 retry option instead of forced rollback, --until for date selection,
 #                 full compilation flags logging, auto-deploy on rollback,
-#                 FIXED backup restore path parsing, CLEAN BUILD LOG FORMAT.
+#                 FIXED backup restore path parsing, CLEAN BUILD LOG FORMAT,
+#                 SYMLINK-AWARE DEPLOYMENT (idempotent copy skip),
+#                 VERSION BUMP & COMMIT-AWARE BACKUP NAMING WITH DUPLICATE CHECK,
+#                 UNIQUE GPU ARCHITECTURE DEDUPLICATION,
+#                 CPU-BASED GGML_NATIVE STRATEGY (independent of GPU age),
+#                 BACKUP NAME INCLUDES COMMIT DATE,
+#                 MULTI-ARCH BUILD OPTION,
+#                 CMAKE_EXTRA_FLAGS ACTUALLY USED,
+#                 FULL GPU LIST IN BUILD LOG,
+#                 MULTI-ARCH SUMMARY WITH COPY COMMANDS,
+#                 ALREADY UP-TO-DATE CHECK.
 # =============================================================================
 # <PLAN>
 # 1. Configuration block (all constants)
 # 2. Logging + helper functions
 # 3. Lock file mechanism (prevent concurrent runs)
 # 4. Build tools check and auto-install
-# 5. GPU detection + smart flag logic
-# 6. Service management (stop/start/persist/status)
-# 7. Backup & Restore with history
-# 8. Hardware/CUDA/Node.js validation
-# 9. Git checkout (latest / date / commit)
-# 10. Build with CUDA fixes and deprecated warning suppression
-# 11. Deployment with detailed diagnostics and retry option
-# 12. Main orchestration with strict error handling
+# 5. GPU detection + smart flag logic (deduplicated architectures)
+# 6. Build strategy decision based on CPU capabilities (AVX2/AVX512)
+# 7. Service management (stop/start/persist/status)
+# 8. Backup & Restore with history, commit-aware naming & duplicate prompt
+# 9. Hardware/CUDA/Node.js validation
+# 10. Git checkout (latest / date / commit)
+# 11. Build with CUDA fixes, strategy handling, and deprecated warning suppression
+# 12. Deployment with symlink detection, idempotent copy skip, and diagnostics
+# 13. Main orchestration with strict error handling
 #
 # Risks mitigated: concurrent execution, missing tools, deployment failures,
 # unclear error messages, forced rollback without retry, incomplete build logs,
-# missing deployment after rollback, broken backup restore path parsing.
+# missing deployment after rollback, broken backup restore path parsing,
+# symlink copy conflicts (cp "same file" error), duplicate backups for same commit,
+# redundant GPU architecture flags, suboptimal CPU instruction selection.
 # </PLAN>
 
 # [RULE_MANDATORY_COMPLIANCE] + [RULE_STRICTNESS]
@@ -38,7 +51,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ====================== CONFIGURATION (DFD: RULE_CONFIG_EXEC_SEPARATION) ======================
-readonly SCRIPT_VERSION="5.5"
+readonly SCRIPT_VERSION="6.2"
 readonly SCRIPT_BASENAME="/opt/llm"
 readonly REPO_DIR="${SCRIPT_BASENAME}/llama.cpp"
 readonly BACKUP_DIR="${SCRIPT_BASENAME}/backup"
@@ -46,7 +59,7 @@ readonly SERVICE_CONFIG="${SCRIPT_BASENAME}/.service_config"
 readonly BUILD_HISTORY="${BACKUP_DIR}/build_history.log"
 readonly LOCK_FILE="/var/run/llm-update.lock"
 
-export SERVICE_NAME="${SERVICE_NAME:-llm.service}"
+export SERVICE_NAME="${SERVICE_NAME:-llm-server.service}"
 
 # Hardware requirements
 readonly REQUIRED_DRIVER="570.211.01"
@@ -57,6 +70,7 @@ readonly GPU_MEMORY_EXPECTED="10240"
 # State
 declare -A SCRIPT_STATE=( [SERVICE_ACTIVE]=false )
 GGML_NATIVE="OFF"
+BUILD_MULTIARCH_MODE="OFF"  # for multi-arch decision
 
 # Track last backup for automatic rollback on failure
 LAST_BACKUP_PATH=""
@@ -293,6 +307,7 @@ print_table() {
 
     echo "$line"
 }
+
 # ====================== КОМПЛЕКСНАЯ ПРОВЕРКА (исправлена) ======================
 check_all_requirements() {
     local gpu_check_rows=()
@@ -316,7 +331,7 @@ check_all_requirements() {
         mem_total=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n1)
     fi
 
-    # ----- P102‑100 specific checks -----
+    # ----- P102 100 specific checks -----
     local is_pascal=false
     local driver_status="FAIL"
     local cuda_status="FAIL"
@@ -352,7 +367,7 @@ check_all_requirements() {
         fi
         gpu_check_rows+=("CUDA Toolkit|${cuda_display}|${cuda_status}")
     else
-        # Non‑Pascal GPU
+        # Non Pascal GPU
         gpu_check_rows+=("GPU Model|${gpu_name:-unknown}|INFO")
         gpu_check_rows+=("Driver|${driver_version:-not found}|INFO")
     fi
@@ -478,7 +493,6 @@ ensure_cuda_installed() {
     fi
 
     log_info "Installing CUDA keyring (GPG verification handled by apt)..."
-
     sudo dpkg -i /tmp/cuda-keyring.deb
     rm -f /tmp/cuda-keyring.deb
 
@@ -496,6 +510,7 @@ ensure_cuda_installed() {
         return 1
     fi
 }
+
 # ====================== GPU DETECTION ======================
 detect_gpus() {
     log_info "Detecting NVIDIA GPUs..."
@@ -517,26 +532,154 @@ detect_gpus() {
     local arch_list=""
     local has_pascal=false
     local gpu_count=0
+    local gpu_names=() # Store all unique GPU names
 
     while IFS= read -r cc_raw; do
         [[ -z "$cc_raw" ]] && continue
         local cc=$(echo "$cc_raw" | tr -d '.')
         ((gpu_count++))
-        [[ -z "$arch_list" ]] && arch_list="$cc" || arch_list="${arch_list};${cc}"
+        
+        # Deduplicate architectures: only add if not already present
+        if [[ ";${arch_list};" != *";${cc};"* ]]; then
+            [[ -z "$arch_list" ]] && arch_list="$cc" || arch_list="${arch_list};${cc}"
+        fi
+        
         [[ "$cc" == "61" ]] && has_pascal=true
         debug_log "GPU ${gpu_count}: Compute Capability ${cc_raw} → ${cc}"
     done <<< "$smi_output"
 
-    export CMAKE_CUDA_ARCHITECTURES="${arch_list:-61}"
-    log_success "Detected ${gpu_count} GPU(s). Architectures: ${CMAKE_CUDA_ARCHITECTURES}"
-
-    if $has_pascal; then
-        GGML_NATIVE="OFF"
-        log_warn "Pascal detected → GGML_NATIVE=OFF"
-    else
-        GGML_NATIVE="ON"
+    # Get unique GPU names for logging
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        local names_output=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null)
+        while IFS= read -r name; do
+            [[ -z "$name" ]] && continue
+            # Add to list if not already present (simple check)
+            local found=false
+            for existing in "${gpu_names[@]}"; do
+                if [[ "$existing" == "$name" ]]; then
+                    found=true
+                    break
+                fi
+            done
+            if ! $found; then
+                gpu_names+=("$name")
+            fi
+        done <<< "$names_output"
     fi
+
+    export CMAKE_CUDA_ARCHITECTURES="${arch_list:-61}"
+    log_success "Detected ${gpu_count} GPU(s). Unique Architectures: ${CMAKE_CUDA_ARCHITECTURES}"
+
+    # Store names for later use in history
+    export DETECTED_GPU_NAMES="${gpu_names[*]:-unknown}"
+
     return 0
+}
+
+# ====================== SMART BUILD STRATEGY (CPU-based) ======================
+decide_build_strategy() {
+    log_info "Determining optimal build strategy based on CPU capabilities..."
+
+    # --- Проверяем возможности CPU через /proc/cpuinfo ---
+    local has_avx2=false
+    local has_avx512=false
+    local has_avx512_vbmi=false
+    local has_avx512_vnni=false
+    local has_avx512_bf16=false
+    local has_f16c=false
+
+    if grep -q "avx2" /proc/cpuinfo 2>/dev/null; then
+        has_avx2=true
+    fi
+
+    if grep -q "avx512f" /proc/cpuinfo 2>/dev/null; then
+        has_avx512=true
+    fi
+
+    if ${has_avx512}; then
+        grep -q "avx512vbmi" /proc/cpuinfo 2>/dev/null && has_avx512_vbmi=true
+        grep -q "avx512vnni" /proc/cpuinfo 2>/dev/null && has_avx512_vnni=true
+        grep -q "avx512bf16" /proc/cpuinfo 2>/dev/null && has_avx512_bf16=true
+        grep -q "f16c" /proc/cpuinfo 2>/dev/null && has_f16c=true
+    fi
+
+    # --- Вывод диагностики ---
+    echo ""
+    echo "Processor: $(grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | xargs)"
+    echo "Cores: $(nproc)"
+    echo "CPU Capabilities detected:"
+    echo "   AVX2          : ${has_avx2}"
+    echo "   AVX512        : ${has_avx512}"
+    echo "   AVX512_VBMI   : ${has_avx512_vbmi}"
+    echo "   AVX512_VNNI   : ${has_avx512_vnni}"
+    echo "   AVX512_BF16   : ${has_avx512_bf16}"
+    echo "   F16C          : ${has_f16c}"
+    echo ""
+
+    # --- Принимаем решение ---
+    if ${has_avx512}; then
+        log_info "AVX512-capable CPU detected → enabling aggressive optimizations"
+        GGML_NATIVE="ON"
+
+        # Формируем дополнительные CMake флаги
+        CMAKE_EXTRA_FLAGS=(
+            "-DGGML_AVX512=ON"
+        )
+
+        ${has_avx512_vbmi} && CMAKE_EXTRA_FLAGS+=("-DGGML_AVX512_VBMI=ON")
+        ${has_avx512_vnni} && CMAKE_EXTRA_FLAGS+=("-DGGML_AVX512_VNNI=ON")
+        ${has_avx512_bf16} && CMAKE_EXTRA_FLAGS+=("-DGGML_AVX512_BF16=ON")
+        ${has_f16c}        && CMAKE_EXTRA_FLAGS+=("-DGGML_F16C=ON")
+
+        log_success "Applied AVX512 optimizations:"
+        for flag in "${CMAKE_EXTRA_FLAGS[@]}"; do
+            log_info "   ${flag}"
+        done
+
+    elif ${has_avx2}; then
+        log_info "AVX2-capable CPU detected → GGML_NATIVE=ON"
+        GGML_NATIVE="ON"
+        CMAKE_EXTRA_FLAGS=("-DGGML_AVX2=ON" "-DGGML_F16C=ON")
+    else
+        log_info "Old CPU detected (no AVX2) → GGML_NATIVE=OFF for compatibility"
+        GGML_NATIVE="OFF"
+        CMAKE_EXTRA_FLAGS=()
+    fi
+
+    # --- Позволяем пользователю переопределить ---
+    read -p "Use this configuration? [Y/n] " confirm
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+        echo "  [1] GGML_NATIVE=OFF (maximum compatibility)"
+        echo "  [2] GGML_NATIVE=ON  (best performance)"
+        read -p "Select [2]: " choice
+        [[ "$choice" == "1" ]] && GGML_NATIVE="OFF"
+        [[ "$choice" == "2" ]] && GGML_NATIVE="ON"
+    fi
+
+    log_info "Final decision: GGML_NATIVE=${GGML_NATIVE}"
+    
+    # --- Check for Multi-Arch GPUs ---
+    local arch_count=$(echo "$CMAKE_CUDA_ARCHITECTURES" | tr ';' '\n' | wc -l)
+    
+    if [[ $arch_count -gt 1 ]]; then
+        echo ""
+        echo "Multiple GPU architectures detected: ${CMAKE_CUDA_ARCHITECTURES}"
+        echo "Please select build strategy:"
+        echo "  [1] Single binary with all architectures (Default)"
+        echo "  [2] Separate binaries for each architecture + Universal binary"
+        read -p "Choice [1]: " multi_arch_choice
+        multi_arch_choice=${multi_arch_choice:-1}
+        
+        if [[ "$multi_arch_choice" == "2" ]]; then
+            BUILD_MULTIARCH_MODE="ON"
+            log_info "Multi-architecture build mode enabled."
+        else
+            BUILD_MULTIARCH_MODE="OFF"
+            log_info "Single binary build mode selected."
+        fi
+    else
+        BUILD_MULTIARCH_MODE="OFF"
+    fi
 }
 
 # ====================== NODEJS & NPM ======================
@@ -592,7 +735,7 @@ load_service_config() {
         export SERVICE_NAME
         log_info "Loaded service config: $SERVICE_NAME"
     else
-        log_warn "No service config found. Using default: llm.service"
+        log_warn "No service config found. Using default: llm-server.service"
     fi
 }
 
@@ -679,7 +822,7 @@ save_build_log() {
         echo "Commit Date: ${commit_date}"
         echo "--------------------------------------------------"
         echo "System Information:"
-        echo "  GPU: ${gpu_name}"
+        echo "  GPUs: ${DETECTED_GPU_NAMES:-unknown}"
         echo "  Driver: ${driver_version}"
         echo "  ${cuda_version_line}"
         echo "--------------------------------------------------"
@@ -696,8 +839,56 @@ save_build_log() {
 # ====================== BACKUP & RESTORE ======================
 create_backup() {
     mkdir -p "${BACKUP_DIR}"
-    local backup_name="backup_$(date '+%Y%m%d_%H%M%S')"
+    
+    # Получаем текущий коммит и дату для имени бэкапа
+    local current_commit=$(cd "${REPO_DIR}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    
+    # Get commit date in ISO format: YYYY-MM-DD HH:MM:SS +ZZZZ
+    # Then convert to: YYYY-MM-DD_HH-MM-SS+ZZZZ
+    local raw_commit_date=$(cd "${REPO_DIR}" 2>/dev/null && git show -s --format=%ai HEAD 2>/dev/null || echo "unknown")
+    local commit_date=""
+    
+    if [[ "$raw_commit_date" != "unknown" ]]; then
+                commit_date=$(echo "$raw_commit_date" | sed 's/:/-/g; s/ /_/; s/ //')
+    else
+        commit_date="unknown"
+    fi
+    
+    local backup_date=$(date '+%Y-%m-%d_%H-%M-%S')
+    
+    # New naming format: backup_YYYY-MM-DD_HH-MM-SS_HASH_COMMITDATE
+    local backup_name="backup_${backup_date}_${current_commit}_${commit_date}"
     local backup_path="${BACKUP_DIR}/${backup_name}"
+
+    # Check for existing backup with same commit hash
+    # We search for any directory in BACKUP_DIR that contains the commit hash in its name.
+    # This covers both old formats (ending in _HASH) and new formats (containing _HASH_).
+    local existing_backup=""
+    
+    # Use find to list directories, then grep to filter by hash presence
+    # The regex ensures we match the hash as a distinct part (preceded/followed by underscore or end of string)
+    # However, simple substring check is usually sufficient if hashes are unique enough.
+    # To be safe against partial matches (e.g. hash 'abc' matching 'abcd'), we rely on the fact that
+    # git short hashes are 7 chars and unlikely to collide with other parts of the filename structure.
+    # A more precise grep would be: grep -E "_${current_commit}(_|$)"
+    
+    while IFS= read -r dir; do
+        if [[ -n "$dir" ]]; then
+            existing_backup="$dir"
+                    break
+                fi
+    done < <(find "${BACKUP_DIR}" -mindepth 1 -maxdepth 1 -type d -name "*_${current_commit}*" | head -n 1)
+
+    if [[ -n "$existing_backup" ]]; then
+        log_warn "A backup for commit ${current_commit} already exists:"
+        log_warn "  $(basename "$existing_backup")"
+        read -p "Create another backup for this commit? [y/N] " dup_choice
+        if [[ ! "$dup_choice" =~ ^[Yy]$ ]]; then
+            log_info "Skipping backup creation as requested."
+            LAST_BACKUP_PATH="$existing_backup"
+            return 0
+        fi
+    fi
 
     log_info "Creating backup → ${backup_path}"
     # Store path globally for potential rollback
@@ -810,6 +1001,19 @@ git_checkout_target() {
     if [[ "$target" == "latest" ]]; then
         log_info "Pulling latest version..."
         git fetch --all --prune
+        
+        # Check if local is already up-to-date with remote
+        local local_head=$(git rev-parse HEAD)
+        local remote_master=$(git rev-parse origin/master 2>/dev/null || git rev-parse origin/main 2>/dev/null)
+        
+        if [[ "$local_head" == "$remote_master" ]]; then
+            log_info "Local version is already up-to-date with remote."
+            read -p "Rebuild anyway? [y/N] " rebuild_choice
+            if [[ "$rebuild_choice" =~ ^[Nn]$ ]]; then
+                log_info "Exiting without changes."
+                exit 0
+            fi
+        fi
         git reset --hard origin/master 2>/dev/null || git reset --hard origin/main
         git pull origin master 2>/dev/null || git pull origin main
         log_success "Latest master/main checked out"
@@ -846,7 +1050,7 @@ ensure_nvidia_driver() {
     fi
 
     log_warn "NVIDIA driver not found"
-    read -p "Automatically install NVIDIA driver ${REQUIRED_DRIVER}? [Y/n] " choice
+    read -p "Automatically install NVIDIA driver ${REQUIRED_DRIVER}? [y/n] " choice
     if [[ "$choice" =~ ^[Nn]$ ]]; then
         log_error "Driver required for GPU operation. Exiting."
         exit 1
@@ -927,7 +1131,6 @@ ensure_nccl() {
 # ====================== BUILD ======================
 perform_build() {
     cd "${REPO_DIR}" || { log_error "Cannot cd to repo directory: ${REPO_DIR}"; return 1; }
-    local build_dir="${REPO_DIR}/build"
     local cuda_path="/usr/local/cuda-${REQUIRED_CUDA}"
     local nvcc_path="${cuda_path}/bin/nvcc"
 
@@ -938,10 +1141,16 @@ perform_build() {
         return 1
     fi
 
-    rm -rf "$build_dir" && mkdir -p "$build_dir"
+    # Clean old builds
+    rm -rf "${REPO_DIR}/build" "${REPO_DIR}/build_*"
+
+    # 1. Perform Primary Build (Universal or Single Arch)
+    local build_dir="${REPO_DIR}/build"
+    mkdir -p "$build_dir"
 
     log_info "Using nvcc: $nvcc_path"
     log_info "Building with architectures: ${CMAKE_CUDA_ARCHITECTURES}"
+    log_info "Build strategy: (GGML_NATIVE=${GGML_NATIVE})"
 
     # Собираем все флаги CMake для логирования
     local cmake_args="-DCMAKE_CUDA_COMPILER=${nvcc_path} \
@@ -953,6 +1162,13 @@ perform_build() {
         -DCMAKE_CUDA_FLAGS=-Wno-deprecated-gpu-targets \
         -DCMAKE_BUILD_TYPE=Release"
 
+    # Add CPU-specific flags if any
+    local extra_flags_log=""
+    for flag in "${CMAKE_EXTRA_FLAGS[@]}"; do
+        cmake_args+=" ${flag}"
+        extra_flags_log+="${flag} "
+    done
+
     # Сохраняем флаги для логирования
     BUILD_CMAKE_ARGS="$cmake_args"
     BUILD_MAKE_ARGS="-j$(nproc) --target llama-cli llama-server llama-gguf-split"
@@ -960,7 +1176,7 @@ perform_build() {
     BUILD_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
     BUILD_COMMIT_DATE=$(git show -s --format=%ci HEAD 2>/dev/null || echo "unknown")
     
-    log_info "Starting compilation..."
+    log_info "Starting primary compilation..."
     log_info "Build timestamp: ${BUILD_TIMESTAMP}"
     log_info "Commit: ${BUILD_COMMIT} (${BUILD_COMMIT_DATE})"
     log_info "CMake flags: ${BUILD_CMAKE_ARGS}"
@@ -975,12 +1191,76 @@ perform_build() {
         -DGGML_NATIVE=${GGML_NATIVE} \
         -DCMAKE_CUDA_FLAGS="-Wno-deprecated-gpu-targets" \
         -DCMAKE_BUILD_TYPE=Release \
-        || { log_error "CMake failed"; return 1; }
+        ${CMAKE_EXTRA_FLAGS[@]} \
+        || { log_error "Primary CMake failed"; return 1; }
 
-    log_info "Starting compilation..."
     cmake --build "$build_dir" --config Release -j$(nproc) \
         --target llama-cli llama-server llama-gguf-split \
-        || { log_error "Build failed"; return 1; }
+        || { log_error "Primary Build failed"; return 1; }
+
+    log_success "Primary build completed successfully"
+
+    # 2. Perform Multi-Arch Builds if enabled
+    if [[ "$BUILD_MULTIARCH_MODE" == "ON" ]]; then
+        log_step "Building specific architecture binaries..."
+        
+        IFS=';' read -ra ARCHS <<< "$CMAKE_CUDA_ARCHITECTURES"
+        
+        for arch in "${ARCHS[@]}"; do
+            log_info "Building for architecture: ${arch}"
+            local specific_build_dir="${REPO_DIR}/build_${arch}"
+            mkdir -p "$specific_build_dir"
+            
+            # Build command for specific arch
+            cmake -S . -B "$specific_build_dir" \
+                -DCMAKE_CUDA_COMPILER="${nvcc_path}" \
+                -DCMAKE_CUDA_ARCHITECTURES="${arch}" \
+                -DGGML_CUDA=ON \
+                -DGGML_CURL=ON \
+                -DGGML_CUDA_FA_ALL_QUANTS=ON \
+                -DGGML_NATIVE=${GGML_NATIVE} \
+                -DCMAKE_CUDA_FLAGS="-Wno-deprecated-gpu-targets" \
+                -DCMAKE_BUILD_TYPE=Release \
+                ${CMAKE_EXTRA_FLAGS[@]} \
+                || { log_error "CMake failed for arch ${arch}"; return 1; }
+
+            cmake --build "$specific_build_dir" --config Release -j$(nproc) \
+                --target llama-server \
+                || { log_error "Build failed for arch ${arch}"; return 1; }
+            
+            # Rename the binary to include architecture suffix
+            local src_bin="${specific_build_dir}/bin/llama-server"
+            local dst_bin="${specific_build_dir}/bin/llama-server-${arch}"
+            
+            if [ -f "$src_bin" ]; then
+                mv "$src_bin" "$dst_bin"
+                chmod +x "$dst_bin"
+                log_success "Created specific binary: llama-server-${arch}"
+            else
+                log_warn "Binary not found for arch ${arch}. Skipping rename."
+            fi
+        done
+        
+        # Output summary for multi-arch builds ONLY if multiple architectures were built
+        local arch_count=$(echo "${ARCHS[@]}" | wc -w)
+        if [[ $arch_count -gt 1 ]]; then
+        echo ""
+        echo "=================================================="
+        echo "MULTI-ARCHITECTURE BUILD SUMMARY"
+        echo "=================================================="
+        echo "Universal binary (all archs) deployed:" 
+        echo "from ${REPO_DIR}/build/bin/llama-server to ${SCRIPT_BASENAME}/llama-server"
+        echo "To deploy specific architecture binaries, use the following commands:"
+        for arch in "${ARCHS[@]}"; do
+            local specific_build_dir="${REPO_DIR}/build_${arch}"
+            local specific_bin="${specific_build_dir}/bin/llama-server-${arch}"
+            if [ -f "$specific_bin" ]; then
+                echo "  cp ${specific_bin} ${SCRIPT_BASENAME}"
+            fi
+        done
+        echo "=================================================="
+    fi
+    fi
 
     log_success "Build completed successfully"
     return 0
@@ -1084,45 +1364,66 @@ deploy_binaries() {
 
     # === DIAGNOSTIC: Attempt copy with detailed error capture ===
     log_info "Deploying binaries from $src_dir to $dst_dir"
-    local copy_output=""
-    local copy_exit_code=0
+    local copied_count=0
+    local failed_bins=()
 
-    copy_output=$(cp -f "${src_dir}/llama-"* "${dst_dir}/" 2>&1) || copy_exit_code=$?
+    for src_file in "${src_dir}"/llama-*; do
+        [ -f "$src_file" ] || continue
+        local bin_name=$(basename "$src_file")
+        local dst_file="${dst_dir}/${bin_name}"
 
-    if [ $copy_exit_code -ne 0 ]; then
-        # Try to identify specific error
-        if echo "$copy_output" | grep -q "Permission denied"; then
-            DEPLOY_ERROR_REASON="COPY_PERMISSION_DENIED"
-            DEPLOY_ERROR_DETAILS="Permission denied during copy: $copy_output"
-        elif echo "$copy_output" | grep -q "No such file or directory"; then
-            DEPLOY_ERROR_REASON="COPY_FILE_NOT_FOUND"
-            DEPLOY_ERROR_DETAILS="File not found during copy: $copy_output"
-        elif echo "$copy_output" | grep -q "Read-only file system"; then
-            DEPLOY_ERROR_REASON="COPY_READ_ONLY"
-            DEPLOY_ERROR_DETAILS="Destination is read-only: $copy_output"
-        else
-            DEPLOY_ERROR_REASON="COPY_FAILED"
-            DEPLOY_ERROR_DETAILS="Copy failed with error: $copy_output"
+        # SYMLINK HANDLING: Check if destination is a symlink pointing to source build dir
+        if [ -L "$dst_file" ]; then
+            local link_target=$(readlink -f "$dst_file" 2>/dev/null)
+            local src_resolved=$(readlink -f "$src_file" 2>/dev/null)
+            
+            # Handle broken symlinks
+            if [ ! -e "$dst_file" ]; then
+                log_warn "Broken symlink detected: ${bin_name} → removing"
+                rm -f "$dst_file"
+            elif [ -n "$link_target" ] && [ "$link_target" = "$src_resolved" ]; then
+                log_info "Skipped copy: ${bin_name} is a valid symlink to build dir"
+                # Ensure executable permission on target
+                if [ ! -x "$dst_file" ]; then
+                    chmod +x "$dst_file" 2>/dev/null || true
+                fi
+                ((copied_count++))
+                continue
+            fi
         fi
 
+        # Standard deployment for non-symlink or mismatched symlink
+        local cp_err=""
+        cp_err=$(cp -f "$src_file" "$dst_file" 2>&1) || {
+            log_error "Failed to copy ${bin_name}: $cp_err"
+            failed_bins+=("$bin_name")
+            continue
+        }
+        chmod +x "$dst_file"
+        ((copied_count++))
+    done
+
+    if [[ ${#failed_bins[@]} -gt 0 ]]; then
+        DEPLOY_ERROR_REASON="COPY_FAILED"
+        DEPLOY_ERROR_DETAILS="Copy failed with error: Failed to deploy: ${failed_bins[*]}"
         log_error "Deployment failed: Copy operation failed"
         log_error "Details: $DEPLOY_ERROR_DETAILS"
         log_error "Possible causes:"
-        log_error "  1. Permission issues - try: sudo chown -R $USER:$USER $dst_dir"
-        log_error "  2. File system is read-only - check: mount | grep $dst_dir"
-        log_error "  3. Try manual copy: sudo cp -f $src_dir/llama-* $dst_dir/"
+        log_error "  1. Permission issues - try: sudo chown -R root:root /opt/llm"
+        log_error "  2. File system is read-only - check: mount | grep /opt/llm"
+        log_error "  3. Try manual copy: sudo cp -f /opt/llm/llama.cpp/build/bin/llama-* /opt/llm/"
         return 1
     fi
 
     # === DIAGNOSTIC: Verify files were copied ===
-    local copied_count=0
+    local copied_count_final=0
     for file in "${dst_dir}"/llama-*; do
         if [ -f "$file" ]; then
-            ((copied_count++))
+            ((copied_count_final++))
         fi
     done
 
-    if [ $copied_count -eq 0 ]; then
+    if [ $copied_count_final -eq 0 ]; then
         DEPLOY_ERROR_REASON="NO_FILES_COPIED"
         DEPLOY_ERROR_DETAILS="No files were copied despite successful command"
         log_error "Deployment failed: No files were copied"
@@ -1133,7 +1434,7 @@ deploy_binaries() {
         return 1
     fi
 
-    log_success "Binaries deployed to ${SCRIPT_BASENAME} (${copied_count} files)"
+    log_success "Binaries deployed to ${SCRIPT_BASENAME} (${copied_count_final} files)"
     return 0
 }
 
@@ -1314,28 +1615,53 @@ main() {
                 exit 1
             fi
 
-            # 3. Git Checkout
+            # 3. Git Checkout / Rebuild Selection
             echo ""
             echo "Select version to build:"
+            local current_commit=$(cd "${REPO_DIR}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
             echo "  [1] Latest (master)"
             echo "  [2] By date (YYYY-MM-DD)"
             echo "  [3] By commit"
+            echo "  [4] Rebuild current version (${current_commit})"
+            echo "  [5] Exit"
             read -p "Choice [1]: " git_choice
             git_choice=${git_choice:-1}
 
             local git_target="latest"
-            if [[ "$git_choice" == "2" ]]; then
-                read -p "Enter date (YYYY-MM-DD): " git_target
-            elif [[ "$git_choice" == "3" ]]; then
-                read -p "Enter commit hash: " git_target
+            local skip_git_checkout=false
+
+            case "$git_choice" in
+                2)
+                    read -p "Enter date (YYYY-MM-DD): " git_target
+                    ;;
+                3)
+                    read -p "Enter commit hash: " git_target
+                    ;;
+                4)
+                    skip_git_checkout=true
+                    log_info "Skipping Git checkout. Rebuilding current version: ${current_commit}"
+                    ;;
+                5)
+                    log_info "Exiting without changes"
+                    release_lock
+                    exit 0
+                    ;;
+                *)
+                    git_target="latest"
+                    ;;
+            esac
+
+            if ! $skip_git_checkout; then
+                if ! git_checkout_target "$git_target"; then
+                    log_error "Git checkout failed"
+                    handle_update_failure
+                    release_lock
+                    exit 1
+                fi
             fi
 
-            if ! git_checkout_target "$git_target"; then
-                log_error "Git checkout failed"
-                handle_update_failure
-                release_lock
-                exit 1
-            fi
+    # Decide build strategy for mixed GPUs / CPU capabilities
+    decide_build_strategy
 
             # 4. Build
             log_info "Starting build..."

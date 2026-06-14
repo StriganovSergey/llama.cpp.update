@@ -22,7 +22,7 @@ Full automation of `llama.cpp` update, backup, rollback, and system recovery for
 - **Mixed GPU Configuration Support**
   Works with:
   - mixed GPU environments
-  - systems without NVIDIA `P102-100`
+  - supported systems without NVIDIA `P102-100`
   - generic CUDA-capable systems
 
 - **Flexible Build Targeting**
@@ -30,7 +30,9 @@ Full automation of `llama.cpp` update, backup, rollback, and system recovery for
   - latest `master`
   - a historical version by date
   - any specific commit SHA
-
+  - rebuild current version
+  - build separate binaries for each GPU architecture + Universal binary
+   
 - **Automatic Rollback**
   Restores the last working build automatically if compilation or deployment fails.
 
@@ -72,10 +74,10 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 
 ```text
 ==================================================
-    LLM Update Script v5.5 — DFD Compliant
+    LLM Update Script v6.2 — DFD Compliant
     Repo: /opt/llm/llama.cpp
 ==================================================
-[INFO]  17:46:25 - Loaded service config: llm.service
+[INFO]  00:18:51 - Loaded service config: llm-server.service
 
 === NVIDIA P102-100 Compatibility Checklist ===
 +---------------+------------+--------+
@@ -90,17 +92,16 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 | Component        | Version      | Status |
 +------------------+--------------+--------+
 | OS               | Ubuntu 24.04 | OK     |
-| Node.js          | v24.15.0     | OK     |
-| npm              | 11.12.1      | OK     |
+| Node.js          | v24.16.0     | OK     |
+| npm              | 11.13.0      | OK     |
 | NCCL (multi-GPU) | OK           | OK     |
 +------------------+--------------+--------+
-[INFO]  17:46:27 - Checking build tools...
-[OK]    17:46:28 - ✓ All build tools are installed
-[INFO]  17:46:28 - Detecting NVIDIA GPUs...
-[OK]    17:46:28 - ✓ Detected 6 GPU(s). Architectures: 61;61;61;61;61;61
-[WARN]  17:46:28 - ⚠️  Pascal detected → GGML_NATIVE=OFF
-[INFO]  17:46:29 - Service llm.service is currently ACTIVE
-[OK]    17:46:29 - ✓ Service name saved: llm.service
+[INFO]  00:18:51 - Checking build tools...
+[OK]    00:18:51 - ✓ All build tools are installed
+[INFO]  00:18:51 - Detecting NVIDIA GPUs...
+[OK]    00:18:51 - ✓ Detected 6 GPU(s). Unique Architectures: 61;89
+[INFO]  00:18:52 - Service llm-server.service is currently ACTIVE
+[OK]    00:18:52 - ✓ Service name saved: llm-server.service
 
 Select action:
   [1] Update / Build
@@ -110,83 +111,115 @@ Selection: 1
 
 === STEP: Updating llama.cpp ===
 
-[INFO]  17:46:38 - Stopping service llm.service...
-[INFO]  17:48:09 - Creating backup → /opt/llm/backup/backup_20260527_174809
-[OK]    17:49:40 - ✓ Backup created: backup_20260527_174809
+[INFO]  00:20:50 - Stopping service llm-server.service...
+[WARN]  00:21:01 - ⚠️  A backup for commit 4988f6e8 already exists:
+[WARN]  00:21:01 - ⚠️    backup_2026-06-14_09-30-26_4988f6e8_2026-06-13_10-49-00-0700
+Create another backup for this commit? [y/N] n
+[INFO]  00:21:24 - Skipping backup creation as requested.
 
 Select version to build:
   [1] Latest (master)
   [2] By date (YYYY-MM-DD)
   [3] By commit
+  [4] Rebuild current version (4988f6e8)
+  [5] Exit
 Choice [1]: 1
-[INFO]  17:58:47 - Pulling latest version...
-remote: Enumerating objects: 370, done.
-remote: Counting objects: 100% (126/126), done.
-remote: Compressing objects: 100% (32/32), done.
-remote: Total 50 (delta 42), reused 25 (delta 18), pack-reused 0 (from 0)
-Unpacking objects: 100% (50/50), 23.61 KiB | 241.00 KiB/s, done.
-From https://github.com/ggerganov/llama.cpp
-   837bb6b4..aa50b2c2  master     -> origin/master
- * [new tag]           b9365      -> b9365
- * [new tag]           b9366      -> b9366
- * [new tag]           b9367      -> b9367
- 
-....
+[INFO]  00:23:31 - Pulling latest version...
+remote: Enumerating objects: 143, done.
+remote: Counting objects: 100% (70/70), done.
+remote: Compressing objects: 100% (17/17), done.
+remote: Total 23 (delta 17), reused 12 (delta 6), pack-reused 0 (from 0)
+Распаковка объектов: 100% (23/23), 5.56 КиБ | 355.00 КиБ/с, готово.
+Из https://github.com/ggerganov/llama.cpp
+   4988f6e8..6e14286e  master     -> origin/master
+ * [новая метка]       b9631      -> b9631
+ * [новая метка]       b9627      -> b9627
+ * [новая метка]       b9628      -> b9628
+ * [новая метка]       b9630      -> b9630
+Указатель HEAD сейчас на коммите 6e14286e cli : fix not copying preserved tokens (#24258)
+Уже актуально.
+[OK]    00:23:34 - ✓ Latest master/main checked out
+[INFO]  00:23:34 - Determining optimal build strategy based on CPU capabilities...
 
-[100%] Linking CXX executable ../../bin/llama-server
-[100%] Built target llama-server
-[  0%] Built target llama-common-base
-[  0%] Built target cpp-httplib
-[  3%] Built target ggml-base
-[  7%] Built target ggml-cpu
-[ 52%] Built target ggml-cuda
-[ 52%] Built target ggml
-[ 91%] Built target llama
-[100%] Built target llama-common
-[100%] Building CXX object tools/gguf-split/CMakeFiles/llama-gguf-split.dir/gguf-split.cpp.o
-[100%] Linking CXX executable ../../bin/llama-gguf-split
-[100%] Built target llama-gguf-split
-[OK]    18:09:28 - ✓ Build completed successfully
-[INFO]  18:09:28 - Starting deployment...
-[INFO]  18:09:28 - Deploying binaries from /opt/llm/llama.cpp/build/bin to /opt/llm
-[OK]    18:09:28 - ✓ Binaries deployed to /opt/llm (3 files)
-[INFO]  18:09:28 - Verifying deployed binaries...
-[OK]    18:09:34 - ✓ Binary verification passed (--version)
-[INFO]  18:09:35 - Build record saved to /opt/llm/backup/build_history.log
-[INFO]  18:09:35 - Starting service llm.service...
-[OK]    18:09:38 - ✓ Service started successfully
-[INFO]  18:09:38 - Displaying service status...
+Processor: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+Cores: 56
+CPU Capabilities detected:
+   AVX2          : true
+   AVX512        : false
+   AVX512_VBMI   : false
+   AVX512_VNNI   : false
+   AVX512_BF16   : false
+   F16C          : false
+
+[INFO]  00:23:34 - AVX2-capable CPU detected → GGML_NATIVE=ON
+Use this configuration? [Y/n] y
+[INFO]  00:24:25 - Final decision: GGML_NATIVE=ON
+
+Multiple GPU architectures detected: 61;89
+Please select build strategy:
+  [1] Single binary with all architectures (Default)
+  [2] Separate binaries for each architecture + Universal binary
+Choice [1]: 2
+[INFO]  00:24:49 - Multi-architecture build mode enabled.
+[INFO]  00:24:49 - Starting build...
+[INFO]  00:24:49 - Using nvcc: /usr/local/cuda-12.8/bin/nvcc
+[INFO]  00:24:49 - Building with architectures: 61;89
+
+...
+...
+...
+
+==================================================
+MULTI-ARCHITECTURE BUILD SUMMARY
+==================================================
+Universal binary (all archs) deployed:
+From /opt/llm/llama.cpp/build/bin/llama-server to /opt/llm/llama-server
+To deploy specific architecture binaries, use the following commands:
+  cp /opt/llm/llama.cpp/build_61/bin/llama-server-61 /opt/llm
+  cp /opt/llm/llama.cpp/build_89/bin/llama-server-89 /opt/llm
+==================================================
+[OK]    00:34:54 - ✓ Build completed successfully
+[INFO]  00:34:54 - Starting deployment...
+[INFO]  00:34:55 - Deploying binaries from /opt/llm/llama.cpp/build/bin to /opt/llm
+[INFO]  00:34:55 - Skipped copy: llama-server is a valid symlink to build dir
+[OK]    00:34:55 - ✓ Binaries deployed to /opt/llm (3 files)
+[INFO]  00:34:55 - Verifying deployed binaries...
+[OK]    00:34:55 - ✓ Binary verification passed (--version)
+[INFO]  00:34:55 - Build record saved to /opt/llm/backup/build_history.log
+[INFO]  00:34:55 - Starting service llm.service...
+[OK]    00:34:59 - ✓ Service started successfully
+[INFO]  00:34:59 - Displaying service status...
 
 === SERVICE STATUS: llm.service ===
 
-● llm.service - Local LLM Service
+● llm.service - LLM Inference Server
      Loaded: loaded (/etc/systemd/system/llm.service; enabled; preset: enabled)
-     Active: active (running) since Wed 2026-05-27 18:09:35 UTC; 3s ago
-   Main PID: 922022 (bash)
-      Tasks: 24 (limit: 37997)
-     Memory: 382.8M (peak: 387.1M)
-        CPU: 1.640s
+     Active: active (running) since Mon 2026-06-15 00:34:56 +12; 3s ago
+   Main PID: 729540 (run_llm.sh)
+      Tasks: 61 (limit: 629145)
+     Memory: 144.4M (peak: 153.0M)
+        CPU: 2.943s
      CGroup: /system.slice/llm.service
-             ├─922022 /bin/bash /opt/llm/run_llm.sh
-             └─922024 /opt/llm/llama-server -m 
-			 ...
-			 
-[OK]    18:09:38 - ✓ Operation completed successfully
+             ├─729540 /bin/bash /opt/llm/run_llm.sh
+             └─729541 /opt/llm/llama-server -m /mnt/Models/...
+        systemd[1]: Started llm.service - LLM Inference Server.
+[OK]    00:34:59 - ✓ Operation completed successfully
 ```
 
 ## Example build_history.log
 ```text
 ==================================================
-Build Record: 2026-05-28 09:20:19
+Build Record: 2026-06-15 00:34:55
 ==================================================
-Commit: 09e7b76c
-Commit Date: 2026-05-28 10:55:42 +0200
+Commit: 6e14286e
+Commit Date: 2026-06-14 11:52:15 +0200
 --------------------------------------------------
 System Information:
-  GPU: NVIDIA P102-100
+  GPUs: NVIDIA P102-100 NVIDIA GeForce RTX 4090
   Driver: 570.211.01
   CUDA Toolkit: 12.8
 --------------------------------------------------
 Full Compilation Flags:
-  CMake flags: -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc         -DCMAKE_CUDA_ARCHITECTURES=61         -DGGML_CUDA=ON         -DGGML_CURL=ON         -DGGML_CUDA_FA_ALL_QUANTS=ON         -DGGML_NATIVE=OFF         -DCMAKE_CUDA_FLAGS=-Wno-deprecated-gpu-targets         -DCMAKE_BUILD_TYPE=Release
-  Make flags: -j4 --target llama-cli llama-server llama-gguf-split
+  CMake flags: -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc         -DCMAKE_CUDA_ARCHITECTURES=61;89         -DGGML_CUDA=ON         -DGGML_CURL=ON         -DGGML_CUDA_FA_ALL_QUANTS=ON         -DGGML_NATIVE=ON         -DCMAKE_CUDA_FLAGS=-Wno-deprecated-gpu-targets         -DCMAKE_BUILD_TYPE=Release -DGGML_AVX2=ON -DGGML_F16C=ON
+  Make flags: -j56 --target llama-cli llama-server llama-gguf-split
+```

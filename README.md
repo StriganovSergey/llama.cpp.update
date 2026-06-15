@@ -77,7 +77,7 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
     LLM Update Script v6.2 — DFD Compliant
     Repo: /opt/llm/llama.cpp
 ==================================================
-[INFO]  00:18:51 - Loaded service config: llm-server.service
+[INFO]  00:18:51 - Loaded service config: llm.service
 
 === NVIDIA P102-100 Compatibility Checklist ===
 +---------------+------------+--------+
@@ -100,8 +100,8 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 [OK]    00:18:51 - ✓ All build tools are installed
 [INFO]  00:18:51 - Detecting NVIDIA GPUs...
 [OK]    00:18:51 - ✓ Detected 6 GPU(s). Unique Architectures: 61;89
-[INFO]  00:18:52 - Service llm-server.service is currently ACTIVE
-[OK]    00:18:52 - ✓ Service name saved: llm-server.service
+[INFO]  00:18:52 - Service llm.service is currently ACTIVE
+[OK]    00:18:52 - ✓ Service name saved: llm.service
 
 Select action:
   [1] Update / Build
@@ -111,7 +111,7 @@ Selection: 1
 
 === STEP: Updating llama.cpp ===
 
-[INFO]  00:20:50 - Stopping service llm-server.service...
+[INFO]  00:20:50 - Stopping service llm.service...
 [WARN]  00:21:01 - ⚠️  A backup for commit 4988f6e8 already exists:
 [WARN]  00:21:01 - ⚠️    backup_2026-06-14_09-30-26_4988f6e8_2026-06-13_10-49-00-0700
 Create another backup for this commit? [y/N] n

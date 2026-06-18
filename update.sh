@@ -59,7 +59,7 @@ readonly SERVICE_CONFIG="${SCRIPT_BASENAME}/.service_config"
 readonly BUILD_HISTORY="${BACKUP_DIR}/build_history.log"
 readonly LOCK_FILE="/var/run/llm-update.lock"
 
-export SERVICE_NAME="${SERVICE_NAME:-llm-server.service}"
+export SERVICE_NAME="${SERVICE_NAME:-llm.service}"
 
 # Hardware requirements
 readonly REQUIRED_DRIVER="570.211.01"
@@ -735,7 +735,7 @@ load_service_config() {
         export SERVICE_NAME
         log_info "Loaded service config: $SERVICE_NAME"
     else
-        log_warn "No service config found. Using default: llm-server.service"
+        log_warn "No service config found. Using default: llm.service"
     fi
 }
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Unified Update Script v6.2 — DFD Compliant Edition (Clean Build Log)
+# Unified Update Script v6.7 — DFD Compliant Edition (Clean Build Log)
 # Purpose: Full automation of llama.cpp update, backup, rollback and system
 #          recovery for Pascal (P102-100) and mixed GPU configurations.
 #          FIXES: Lock file, build tools check, detailed deployment diagnostics,
@@ -16,7 +16,9 @@
 #                 CMAKE_EXTRA_FLAGS ACTUALLY USED,
 #                 FULL GPU LIST IN BUILD LOG,
 #                 MULTI-ARCH SUMMARY WITH COPY COMMANDS,
-#                 ALREADY UP-TO-DATE CHECK.
+#                 ALREADY UP-TO-DATE CHECK,recursive deploy retry,
+#                 backup restore returning success on user 'n' input.
+#          NEW: llama.cpp path/version check in table, install.sh integration.
 # =============================================================================
 # <PLAN>
 # 1. Configuration block (all constants)
@@ -29,15 +31,18 @@
 # 8. Backup & Restore with history, commit-aware naming & duplicate prompt
 # 9. Hardware/CUDA/Node.js validation
 # 10. Git checkout (latest / date / commit)
-# 11. Build with CUDA fixes, strategy handling, and deprecated warning suppression
-# 12. Deployment with symlink detection, idempotent copy skip, and diagnostics
-# 13. Main orchestration with strict error handling
+# 11. Delta report generation (pre/post-sync commit comparison)
+# 12. Build with CUDA fixes, strategy handling, and deprecated warning suppression
+# 13. Deployment with symlink detection, idempotent copy skip, and diagnostics
+# 14. Main orchestration with strict error handling
+# 15. System requirements table update (OS, llama.cpp version, Node.js, NCCL)
 #
 # Risks mitigated: concurrent execution, missing tools, deployment failures,
 # unclear error messages, forced rollback without retry, incomplete build logs,
 # missing deployment after rollback, broken backup restore path parsing,
 # symlink copy conflicts (cp "same file" error), duplicate backups for same commit,
-# redundant GPU architecture flags, suboptimal CPU instruction selection.
+# redundant GPU architecture flags, suboptimal CPU instruction selection,
+# incorrect commit range ordering for delta reports.
 # </PLAN>
 
 # [RULE_MANDATORY_COMPLIANCE] + [RULE_STRICTNESS]
@@ -51,13 +56,21 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ====================== CONFIGURATION (DFD: RULE_CONFIG_EXEC_SEPARATION) ======================
-readonly SCRIPT_VERSION="6.2"
+readonly SCRIPT_VERSION="6.7"
 readonly SCRIPT_BASENAME="/opt/llm"
 readonly REPO_DIR="${SCRIPT_BASENAME}/llama.cpp"
 readonly BACKUP_DIR="${SCRIPT_BASENAME}/backup"
 readonly SERVICE_CONFIG="${SCRIPT_BASENAME}/.service_config"
 readonly BUILD_HISTORY="${BACKUP_DIR}/build_history.log"
 readonly LOCK_FILE="/var/run/llm-update.lock"
+
+# === Delta Report Configuration (DFD: RULE_CONFIG_EXEC_SEPARATION) ===
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly DELTA_SCRIPT="${SCRIPT_DIR}/git_delta.sh"
+readonly REPORTS_DIR="${REPO_DIR}/reports"
+
+# === Install Script Configuration (New) ===
+readonly INSTALL_SCRIPT="${SCRIPT_DIR}/install.sh"
 
 export SERVICE_NAME="${SERVICE_NAME:-llm.service}"
 
@@ -88,6 +101,10 @@ BUILD_MAKE_ARGS=""
 
 # Track if service was stopped (for auto-restart on rollback)
 SERVICE_WAS_STOPPED=false
+
+# === Delta Report State ===
+PRE_SYNC_COMMIT="unknown"
+POST_SYNC_COMMIT="unknown"
 
 # ====================== LOCK FILE MANAGEMENT ======================
 acquire_lock() {
@@ -384,6 +401,18 @@ check_all_requirements() {
     fi
     common_rows+=("OS|${os_version}|${os_status}")
 
+    # ----- llama.cpp check (New) -----
+    local repo_status="FAIL"
+    local repo_version="N/A"
+    
+    if [[ -d "$REPO_DIR" ]]; then
+        repo_status="OK"
+        repo_version=$(cd "${REPO_DIR}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "N/A")
+        common_rows+=("llama.cpp|${repo_version}|${repo_status}")
+    else
+        common_rows+=("llama.cpp|N/A|${repo_status}")
+    fi
+
     local node_version=$(node --version 2>/dev/null || echo "not installed")
     local npm_version=$(npm --version 2>/dev/null || echo "not installed")
     local node_status="FAIL"
@@ -437,6 +466,21 @@ check_all_requirements() {
             exit 0
         else
             critical_fail=true
+        fi
+    fi
+
+    # ----- llama.cpp Installation Check (New) -----
+    if [[ "$repo_status" == "FAIL" ]]; then
+        echo ""
+        read -p "llama.cpp directory ($REPO_DIR) is missing. Install now? [y/N] " install_choice
+        if [[ "$install_choice" =~ ^[Yy]$ ]]; then
+            log_info "Running installer: ${INSTALL_SCRIPT}"
+            bash "${INSTALL_SCRIPT}"
+            log_info "Please rerun the update script after installation."
+            exit 0
+        else
+            log_error "Exiting due to missing repo directory."
+            exit 1
         fi
     fi
 
@@ -955,7 +999,8 @@ restore_backup_interactive() {
     fi
 
     read -p "Restore $(basename "$target_backup")? [y/N] " confirm
-    [[ "$confirm" =~ ^[Yy]$ ]] || return 0
+    # === ИСПРАВЛЕНИЕ: || return 1, чтобы корректно прерывать откат при отказе пользователя ===
+    [[ "$confirm" =~ ^[Yy]$ ]] || { log_info "Restore skipped by user."; return 1; }
 
     log_info "Removing existing repo directory..."
     rm -rf "${REPO_DIR}"
@@ -1540,8 +1585,21 @@ handle_deployment_failure() {
 
     case "$retry_choice" in
         1)
-            log_info "Returning to main menu to retry..."
-            return 0
+            # === ИСПРАВЛЕНИЕ: Прямой повторный вызов deploy_binaries без перезапуска скрипта ===
+            log_info "Fix the issue (e.g., stop service), then press [Enter] to retry deployment..."
+            read -r
+            
+            # Очищаем устаревшие диагностические флаги перед повтором
+            DEPLOY_ERROR_REASON=""
+            DEPLOY_ERROR_DETAILS=""
+            
+            if deploy_binaries; then
+                log_success "Deployment succeeded on retry!"
+                return 0
+            else
+                # Если всё ещё не вышло — рекурсивно предлагаем выбор снова
+                handle_deployment_failure
+            fi
             ;;
         2)
             if [ -n "$LAST_BACKUP_PATH" ] && [ -d "$LAST_BACKUP_PATH" ]; then
@@ -1590,9 +1648,12 @@ main() {
 
     check_initial_service_status
 
+    # === Capture pre-sync commit state ===
+    PRE_SYNC_COMMIT=$(cd "${REPO_DIR}" 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo "unknown")
+
     echo ""
     echo "Select action:"
-    echo "  [1] Update / Build"
+    echo "  [1] Update / Build / Deploy"
     echo "  [2] Rollback to previous build"
     echo "  [3] Exit"
     read -p "Selection: " action
@@ -1617,18 +1678,20 @@ main() {
 
             # 3. Git Checkout / Rebuild Selection
             echo ""
-            echo "Select version to build:"
+            echo "Select version to build or redeploy:"
             local current_commit=$(cd "${REPO_DIR}" 2>/dev/null && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
             echo "  [1] Latest (master)"
             echo "  [2] By date (YYYY-MM-DD)"
             echo "  [3] By commit"
             echo "  [4] Rebuild current version (${current_commit})"
-            echo "  [5] Exit"
+            echo "  [5] Redeploy current version (${current_commit})"
+            echo "  [6] Exit"
             read -p "Choice [1]: " git_choice
             git_choice=${git_choice:-1}
 
             local git_target="latest"
             local skip_git_checkout=false
+            local is_redeploy=false
 
             case "$git_choice" in
                 2)
@@ -1642,6 +1705,11 @@ main() {
                     log_info "Skipping Git checkout. Rebuilding current version: ${current_commit}"
                     ;;
                 5)
+                    skip_git_checkout=true
+                    is_redeploy=true
+                    log_info "Skipping Git checkout. Redeploying current version: ${current_commit}"
+                    ;;
+                6)
                     log_info "Exiting without changes"
                     release_lock
                     exit 0
@@ -1660,25 +1728,60 @@ main() {
                 fi
             fi
 
-    # Decide build strategy for mixed GPUs / CPU capabilities
-    decide_build_strategy
+            # === Capture post-sync commit state & Generate Delta Report ===
+            POST_SYNC_COMMIT=$(cd "${REPO_DIR}" 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo "unknown")
 
-            # 4. Build
-            log_info "Starting build..."
-            if ! perform_build; then
-                log_error "Build failed"
-                handle_update_failure
-                release_lock
-                exit 1
+            if [[ "$PRE_SYNC_COMMIT" != "unknown" ]] && [[ "$PRE_SYNC_COMMIT" != "$POST_SYNC_COMMIT" ]] && ! $is_redeploy; then
+                # Determine correct chronological order (older -> newer)
+                local DELTA_START="$PRE_SYNC_COMMIT"
+                local DELTA_END="$POST_SYNC_COMMIT"
+                if git merge-base --is-ancestor "$PRE_SYNC_COMMIT" "$POST_SYNC_COMMIT" 2>/dev/null; then
+                    DELTA_START="$PRE_SYNC_COMMIT"
+                    DELTA_END="$POST_SYNC_COMMIT"
+                else
+                    DELTA_START="$POST_SYNC_COMMIT"
+                    DELTA_END="$PRE_SYNC_COMMIT"
+                fi
+
+                echo ""
+                read -p "Generate delta report between $DELTA_START and $DELTA_END? [y/N] " delta_yes
+                if [[ "$delta_yes" =~ ^[Yy]$ ]]; then
+                    read -p "Commits per chunk (default 20): " delta_chunk
+                    delta_chunk=${delta_chunk:-20}
+
+                    log_info "Running delta generator..."
+                    if bash "${DELTA_SCRIPT}" \
+                        --path "${REPO_DIR}" \
+                        --remote "https://github.com/ggerganov/llama.cpp" \
+                        --start "$DELTA_START" \
+                        --end "$DELTA_END" \
+                        --chunk "$delta_chunk"; then
+                        log_success "Delta report generation completed."
+                    else
+                        log_warn "Delta generation finished with warnings. Check logs."
+                    fi
+                fi
+            fi
+
+            # 4. Build (skip if redeploy)
+            if ! $is_redeploy; then
+                 decide_build_strategy
+                log_info "Starting build..."
+                if ! perform_build; then
+                    log_error "Build failed"
+                    handle_update_failure
+                    release_lock
+                    exit 1
+                fi
+            else
+                log_info "Skipping build for Redeploy..."
             fi
 
             # 5. Deploy
             log_info "Starting deployment..."
             if ! deploy_binaries; then
                 log_error "Deployment failed"
-                handle_deployment_failure
-                release_lock
-                exit 1
+                handle_deployment_failure || { release_lock; exit 1; }
             fi
 
             # 6. Verify Binaries

@@ -6,6 +6,7 @@ Full automation of `llama.cpp` update, backup, rollback, and system recovery for
 
 ## Script Features
 
+### Core Functionality
 - **Updates `llama.cpp`**
   Designed specifically with requirements matching NVIDIA `P102-100` / Pascal GPUs in mind.
 
@@ -27,26 +28,39 @@ Full automation of `llama.cpp` update, backup, rollback, and system recovery for
 
 - **Flexible Build Targeting**
   Supports building:
-  - latest `master`
-  - a historical version by date
-  - any specific commit SHA
-  - rebuild current version
-  - build separate binaries for each GPU architecture + Universal binary
+  - Latest `master`
+  - A historical version by date
+  - Any specific commit SHA
+  - Rebuild current version (skip git checkout)
+  - Redeploy current version (skip git + build)
+  - Separate binaries for each GPU architecture + Universal binary (multi-arch mode)
    
 - **Automatic Rollback**
   Restores the last working build automatically if compilation or deployment fails.
+- **Delta Report Generation** — Generates detailed commit comparison reports between pre/post sync states using `git_delta.sh`
+- **Smart Build Strategy** — CPU-based optimization selection (AVX512/AVX2/F16C) with interactive override
+- **Symlink-Aware Deployment** — Idempotent copy skip for symlinks pointing to build directory
+- **Commit-Aware Backup Naming** — Backup names include commit hash and commit date with duplicate detection
+- **GPU Architecture Deduplication** — Unique CUDA architectures detection to avoid redundant build flags
+- **Clean Build Log Format** — Structured build history with full compilation flags, system info, and commit metadata
+- **Recursive Deploy Retry** — Interactive retry mechanism with detailed diagnostics for deployment failures
+- **Already Up-to-Date Check** — Detects when local version matches remote and offers skip option
+- **Install.sh Integration** — Automatic `llama.cpp` repository installation if missing
 
 ---
 ### Key Paths
 ```
-| Path                              | Purpose                            |
-|-----------------------------------|------------------------------------|
-| /opt/llm/llama.cpp                | Source code repository (git clone) |
-| /opt/llm/backup                   | Backup snapshots with timestamps   |
-| /opt/llm/backup/build_history.log | Build records log                  |
-| /opt/llm/.service_config          | Service name configuration         |
-| /opt/llm/llama-*                  | Deployed binaries                  |
+| Path                              | Purpose                              |
+|-----------------------------------|--------------------------------------|
+| /opt/llm/llama.cpp                | Source code repository (git clone)   |
+| /opt/llm/backup                   | Backup snapshots with timestamps     |
+| /opt/llm/backup/build_history.log | Build records log                    |
+| /opt/llm/.service_config          | Service name configuration           |
+| /opt/llm/llama-*                  | Deployed binaries                    |
+| `/opt/llm/llama.cpp/reports/`     | Delta report output directory (diff) |
 ```
+
+---
 
 ## Step 1 - edit script configuration
 ```bash
@@ -55,6 +69,15 @@ readonly REPO_DIR="${SCRIPT_BASENAME}/llama.cpp"
 readonly BACKUP_DIR="${SCRIPT_BASENAME}/backup"
 readonly SERVICE_CONFIG="${SCRIPT_BASENAME}/.service_config"
 readonly BUILD_HISTORY="${BACKUP_DIR}/build_history.log"
+readonly LOCK_FILE="/var/run/llm-update.lock"
+
+# === Delta Report Configuration (DFD: RULE_CONFIG_EXEC_SEPARATION) ===
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly DELTA_SCRIPT="${SCRIPT_DIR}/git_delta.sh"
+readonly REPORTS_DIR="${REPO_DIR}/reports"
+
+# === Install Script Configuration (New) ===
+readonly INSTALL_SCRIPT="${SCRIPT_DIR}/install.sh"
 
 export SERVICE_NAME="${SERVICE_NAME:-llm.service}"
 
@@ -63,13 +86,13 @@ readonly REQUIRED_DRIVER="570.211.01"
 readonly REQUIRED_CUDA="12.8"
 readonly GPU_NAME_EXPECTED="P102-100"
 readonly GPU_MEMORY_EXPECTED="10240"
+
 ```
 
 ## Step 2 - run
 ```bash
 $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 ```
-
 ## Example Console Output
 
 ```text
@@ -222,4 +245,161 @@ System Information:
 Full Compilation Flags:
   CMake flags: -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc         -DCMAKE_CUDA_ARCHITECTURES=61;89         -DGGML_CUDA=ON         -DGGML_CURL=ON         -DGGML_CUDA_FA_ALL_QUANTS=ON         -DGGML_NATIVE=ON         -DCMAKE_CUDA_FLAGS=-Wno-deprecated-gpu-targets         -DCMAKE_BUILD_TYPE=Release -DGGML_AVX2=ON -DGGML_F16C=ON
   Make flags: -j56 --target llama-cli llama-server llama-gguf-split
+```
+## BPMN Process Flow
+
+```mermaid
+flowchart TD
+    Start([Start]) --> Lock[Acquire lock file]
+    Lock --> LockOK{Lock acquired?}
+    LockOK -- No --> LockErr[/Error: Script already running/] --> End1([End])
+    LockOK -- Yes --> LoadCfg[Load service config]
+    
+    LoadCfg --> CheckReq[Check requirements:<br/>GPU, Driver, CUDA, OS,<br/>llama.cpp, Node.js, NCCL]
+    
+    CheckReq --> ReqOK{All requirements OK?}
+    ReqOK -- No --> FixPrompt{Apply automatic fixes?}
+    FixPrompt -- Y --> ApplyFix[Install driver/CUDA/Node/NCCL] --> End2([End: Rerun script])
+    FixPrompt -- N --> CritFail[/Critical failure/] --> End3([End])
+    
+    ReqOK -- Yes --> CheckRepo{llama.cpp exists?}
+    CheckRepo -- No --> InstallPrompt{Install via install.sh?}
+    InstallPrompt -- Y --> RunInstall[Run install.sh] --> End4([End])
+    InstallPrompt -- N --> End5([End: Missing repo])
+    
+    CheckRepo -- Yes --> CheckTools[Check build tools:<br/>git, cmake, make, gcc]
+    
+    CheckTools --> ToolsOK{All tools present?}
+    ToolsOK -- No --> ToolChoice{Choice:}
+    ToolChoice -- 1 Install --> InstallTools[Install tools] --> DetectGPU
+    ToolChoice -- 2 Skip --> SkipTools[Skip check] --> DetectGPU
+    ToolChoice -- 3 Exit --> End6([End])
+    
+    ToolsOK -- Yes --> DetectGPU[Detect GPUs:<br/>nvidia-smi → CUDA_ARCH]
+    
+    DetectGPU --> GPUDet{GPUs detected?}
+    GPUDet -- No --> FallbackArch[Fallback: CUDA_ARCH=61,<br/>GGML_NATIVE=OFF] --> CheckSvc
+    GPUDet -- Yes --> SaveArch[Save unique architectures] --> CheckSvc
+    
+    CheckSvc[Check service status] --> SavePre[Save PRE_SYNC_COMMIT]
+    SavePre --> MainMenu{Select action:}
+    
+    MainMenu -- 1 Update --> UpdateFlow[Update/Build/Deploy]
+    MainMenu -- 2 Rollback --> RollbackFlow[Rollback]
+    MainMenu -- 3 Exit --> End7([End: Exit])
+    MainMenu -- * --> End8([End: Invalid])
+    
+    %% UPDATE FLOW
+    UpdateFlow --> StopSvc[Stop service]
+    StopSvc --> StopOK{Success?}
+    StopOK -- No --> End9([End: Stop failed])
+    StopOK -- Yes --> CreateBkp[Create backup]
+    
+    CreateBkp --> BkpDup{Backup for this<br/>commit exists?}
+    BkpDup -- Yes --> DupPrompt{Create another?}
+    DupPrompt -- Y --> DoBkp[Copy REPO_DIR → backup]
+    DupPrompt -- N --> SkipBkp[Skip backup]
+    BkpDup -- No --> DoBkp
+    
+    DoBkp --> GitChoice{Select version:}
+    SkipBkp --> GitChoice
+    
+    GitChoice -- 1 Latest --> GitLatest[git fetch + reset --hard origin/master]
+    GitChoice -- 2 Date --> AskDate[Enter date YYYY-MM-DD] --> GitDate[git rev-list --until]
+    GitChoice -- 3 Commit --> AskCommit[Enter commit hash] --> GitCommit[git reset --hard]
+    GitChoice -- 4 Rebuild --> SkipGit[Skip git checkout]
+    GitChoice -- 5 Redeploy --> SkipGit2[Skip git + build]
+    GitChoice -- 6 --> End10([End])
+    
+    GitLatest --> UpToDate{Local == Remote?}
+    UpToDate -- Yes --> RebuildPrompt{Rebuild anyway?}
+    RebuildPrompt -- N --> End11([End])
+    RebuildPrompt -- Y --> SavePost
+    UpToDate -- No --> SavePost[Save POST_SYNC_COMMIT]
+    
+    GitDate --> SavePost
+    GitCommit --> SavePost
+    SkipGit --> SavePost
+    SkipGit2 --> DeltaCheck
+    
+    SavePost --> DeltaCheck{PRE != POST<br/>and not redeploy?}
+    DeltaCheck -- Yes --> DeltaPrompt{Generate delta report?}
+    DeltaPrompt -- Y --> GenDelta[Run git_delta.sh] --> BuildCheck
+    DeltaPrompt -- N --> BuildCheck
+    DeltaCheck -- No --> BuildCheck
+    
+    BuildCheck{is_redeploy?}
+    BuildCheck -- Yes --> DeploySkip[Skip build] --> Deploy
+    BuildCheck -- No --> BuildStrategy[decide_build_strategy]
+    
+    BuildStrategy --> CPUCheck{CPU capabilities}
+    CPUCheck -- AVX512 --> AVX512[GGML_NATIVE=ON<br/>+ AVX512 flags]
+    CPUCheck -- AVX2 --> AVX2[GGML_NATIVE=ON<br/>+ AVX2 flags]
+    CPUCheck -- Old --> OldCPU[GGML_NATIVE=OFF]
+    
+    AVX512 --> StratConfirm{Use this config?}
+    AVX2 --> StratConfirm
+    OldCPU --> StratConfirm
+    StratConfirm -- N --> StratChoice{Choice: 1-OFF, 2-ON}
+    StratChoice --> MultiArchCheck
+    StratConfirm -- Y --> MultiArchCheck
+    
+    MultiArchCheck{Multiple GPU arch?}
+    MultiArchCheck -- Yes --> MultiChoice{Build strategy:}
+    MultiChoice -- 1 --> SingleBin[Single binary]
+    MultiChoice -- 2 --> MultiBin[Multi-arch binaries]
+    MultiArchCheck -- No --> SingleBin
+    
+    SingleBin --> PerformBuild[perform_build:<br/>cmake configure → cmake build]
+    MultiBin --> PerformBuild
+    
+    PerformBuild --> CMakeOK{CMake OK?}
+    CMakeOK -- No --> UpdateFail
+    CMakeOK -- Yes --> MakeOK{Make OK?}
+    MakeOK -- No --> UpdateFail
+    MakeOK -- Yes --> Deploy
+    
+    Deploy[deploy_binaries] --> DiagCheck{Diagnostics:}
+    DiagCheck -- SOURCE_NOT_FOUND --> DeployErr
+    DiagCheck -- NO_BINARIES --> DeployErr
+    DiagCheck -- DEST_NOT_FOUND --> DeployErr
+    DiagCheck -- NO_WRITE_PERMISSION --> DeployErr
+    DiagCheck -- FILES_LOCKED --> DeployErr
+    DiagCheck -- LOW_DISK_SPACE --> DeployErr
+    DiagCheck -- COPY_FAILED --> DeployErr
+    DiagCheck -- OK --> VerifyBin
+    
+    DeployErr[handle_deployment_failure] --> RetryChoice{Choice:}
+    RetryChoice -- 1 Retry --> FixIssue[Fix issue → Enter] --> Deploy
+    RetryChoice -- 2 Restore --> RestoreBkp[restore_backup_path] --> End12([End])
+    RetryChoice -- 3 Exit --> End13([End])
+    
+    VerifyBin[verify_binaries] --> VerifyOK{OK?}
+    VerifyOK -- No --> UpdateFail
+    VerifyOK -- Yes --> SaveLog[save_build_log]
+    
+    SaveLog --> StartSvc[start_service]
+    StartSvc --> SvcOK{OK?}
+    SvcOK -- No --> UpdateFail
+    SvcOK -- Yes --> ShowStatus[display_service_status] --> End14([End: Success])
+    
+    UpdateFail[handle_update_failure] --> RollbackPrompt{Restore backup?}
+    RollbackPrompt -- Y --> AutoRestore[restore_backup_path] --> End15([End])
+    RollbackPrompt -- N --> End16([End: Backup preserved])
+    
+    %% ROLLBACK FLOW
+    RollbackFlow --> StopSvc2[Stop service]
+    StopSvc2 --> ListBkp[list_backups]
+    ListBkp --> AskBkpID[Enter backup ID]
+    AskBkpID --> ConfirmRestore{Confirm restore?}
+    ConfirmRestore -- N --> End17([End: Skipped])
+    ConfirmRestore -- Y --> DoRestore[cp backup → REPO_DIR]
+    
+    DoRestore --> CompleteRb[complete_rollback]
+    CompleteRb --> DeployRb[deploy_binaries]
+    DeployRb --> DeployRbOK{OK?}
+    DeployRbOK -- No --> End18([End: Rollback failed])
+    DeployRbOK -- Yes --> VerifyRb[verify_binaries]
+    VerifyRb --> StartSvcRb[start_service]
+    StartSvcRb --> ShowStatusRb[display_service_status] --> End19([End: Rollback success])
 ```

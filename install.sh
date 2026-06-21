@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
 # =============================================================================
-# install.sh — LLM Environment Installer v1.0.3
+# install.sh — LLM Environment Installer v1.0.5
 # Purpose: Idempotent setup of llama.cpp repo, model selection, systemd service,
 #          run script, and invocation of update.sh for build/deploy.
-# DFD Compliant Edition — Smart Repo Update Check & Status Reporting
+# DFD Compliant Edition — Robust Read Handling & Fallback Update Detection
 # =============================================================================
 # <PLAN>
 # 1. Configuration block (constants, paths, templates)
 # 2. Logging + helper functions (prompt, validation, idempotent create/fix)
 # 3. f_check_status() → Reports existence/version of repo, service, run script, models
 # 4. Step 1: Clone/validate repository (Smart Update Check)
-# 5. Step 2: Model selection dialog with explicit path & progress
-# 6. Step 3: Create/validate systemd service file (independent)
-# 7. Step 4: Create/validate run_llm.sh startup script (independent)
-# 8. Step 5: Invoke update.sh with pre-flight message
-# 9. Main orchestration with strict error handling & exit trap
-# Risks mitigated: aggressive skip logic, missing progress, unvalidated steps,
-# read blocking in sudo/SSH, unhandled EOF, broken templates, permission failures.
+# 5. Smart Skip Check → If run_llm.sh and models exist, ask to skip configuration
+# 6. Step 2: Model selection dialog (with Exit option)
+# 7. Step 3: Create/validate systemd service file (independent)
+# 8. Step 4: Create/validate run_llm.sh startup script (independent)
+# 9. Step 5: Invoke update.sh with pre-flight message (Fallback to update*.sh)
+# 10. Main orchestration with strict error handling & exit trap
+# Risks mitigated: read interrupt (Ctrl+C) defaulting to Y, missing update.sh,
+# aggressive skip logic, missing progress, unvalidated steps, permission failures.
 # </PLAN>
 
 # [RULE_MANDATORY_COMPLIANCE] + [RULE_STRICTNESS]
 set -euo pipefail
 
 # ====================== CONFIGURATION (DFD: RULE_CONFIG_EXEC_SEPARATION) ======================
-readonly s_SCRIPT_VERSION="1.0.3"
+readonly s_SCRIPT_VERSION="1.0.5"
 readonly s_SCRIPT_NAME="install.sh"
 readonly s_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly s_INSTALL_DIR="/opt/llm"
@@ -144,13 +145,13 @@ f_check_status() {
         echo " [MISSING] Repository: $s_REPO_DIR"
     fi
     
-    # Service check
-    if systemctl list-unit-files --type=service 2>/dev/null | grep -q "^llm.service"; then
+    # Service check (Fixed: Direct file check is more reliable than systemctl list)
+    if [[ -f "$s_SERVICE_PATH" ]]; then
         local s_svc_state
         s_svc_state=$(systemctl is-active llm.service 2>/dev/null || echo "inactive")
         echo " [OK] Service: llm.service (state: $s_svc_state)"
     else
-        echo " [MISSING] Service: /etc/systemd/system/llm.service"
+        echo " [MISSING] Service: $s_SERVICE_PATH"
     fi
     
     # Run script check
@@ -235,6 +236,7 @@ f_handle_model() {
         echo "  [1] Use existing local model"
         echo "  [2] Download default model to ${s_MODEL_DIR}"
         echo "  [3] Download custom model (URL)"
+        echo "  [4] Exit installer"
         read -r -p "Choice [2]: " s_MODEL_CHOICE
         s_MODEL_CHOICE="${s_MODEL_CHOICE:-2}"
         
@@ -323,6 +325,10 @@ f_handle_model() {
                     break
                 fi
                 ;;
+            4)
+                f_log_info "Exiting installer."
+                exit 0
+                ;;
             *) f_log_warn "Invalid choice";;
         esac
     done
@@ -382,8 +388,22 @@ f_handle_run_script() {
 f_invoke_update() {
     f_log_step "Preparing Build & Deploy"
     
+    # Fallback: If update.sh is missing, look for update*.sh
     if [[ ! -f "$s_UPDATE_SCRIPT" ]]; then
-        f_log_error "update.sh not found in ${s_SCRIPT_DIR}"
+        local found_update
+        found_update=$(find "$s_SCRIPT_DIR" -maxdepth 1 -name "update*.sh" -type f 2>/dev/null | head -n 1)
+        if [[ -n "$found_update" ]]; then
+            f_log_warn "update.sh not found. Using found update script: $(basename "$found_update")"
+            s_UPDATE_SCRIPT="$found_update"
+        else
+            f_log_error "No update scripts found in ${s_SCRIPT_DIR}"
+            return 1
+        fi
+    fi
+    
+    if [[ ! -f "$s_UPDATE_SCRIPT" ]]; then
+        f_log_error "update.sh (or fallback) not found in ${s_SCRIPT_DIR}"
+        ls -l "$s_SCRIPT_DIR" | grep update || true
         return 1
     fi
     
@@ -453,12 +473,38 @@ f_main() {
     # 2. Report current state independently
     f_check_status
     
-    # 3. Configure remaining components sequentially & independently
+    # 3. Smart Skip Check: If run_llm.sh and models exist, ask to skip configuration
+    if [[ -f "$s_RUN_SCRIPT_PATH" ]] && [[ -n "$(find "$s_MODEL_DIR" -maxdepth 1 -name '*.gguf' 2>/dev/null | head -n 1)" ]]; then
+        echo ""
+        read -r -p "Existing config detected (run script + models). Skip configuration? [Y/n]: " s_SKIP_CHOICE
+        
+        # FIX: Handle Ctrl+C properly. If read fails (interrupt), default to 'N' (Don't skip)
+        # Previously, empty variable defaulted to Y which was confusing.
+        local read_status=$?
+        if [[ $read_status -ne 0 ]]; then
+            f_log_warn "User interrupted skip prompt."
+            s_SKIP_CHOICE="N"
+        else
+            s_SKIP_CHOICE="${s_SKIP_CHOICE:-Y}"
+        fi
+        
+        if [[ "$s_SKIP_CHOICE" =~ ^[Nn]$ ]]; then
+            f_log_info "Proceeding with configuration steps..."
+        else
+            f_log_success "Skipping configuration. Proceeding to build..."
+            f_invoke_update || { f_log_warn "Update invocation finished with warnings."; }
+            echo ""
+            f_log_success "Installation sequence completed."
+            exit 0
+        fi
+    fi
+    
+    # 4. Configure remaining components sequentially & independently
     f_handle_model   || { f_log_error "Model step failed."; exit 1; }
     f_handle_service || { f_log_error "Service step failed."; exit 1; }
     f_handle_run_script || { f_log_error "Run script step failed."; exit 1; }
     
-    # 4. Invoke build/deploy
+    # 5. Invoke build/deploy
     f_invoke_update  || { f_log_warn "Update invocation finished with warnings."; }
     
     echo ""

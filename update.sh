@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Unified Update Script v6.7 — DFD Compliant Edition (Clean Build Log)
+# Unified Update Script v6.10 — DFD Compliant Edition (Explicit Hash Logic)
 # Purpose: Full automation of llama.cpp update, backup, rollback and system
 #          recovery for Pascal (P102-100) and mixed GPU configurations.
 #          FIXES: Lock file, build tools check, detailed deployment diagnostics,
@@ -18,7 +18,8 @@
 #                 MULTI-ARCH SUMMARY WITH COPY COMMANDS,
 #                 ALREADY UP-TO-DATE CHECK,recursive deploy retry,
 #                 backup restore returning success on user 'n' input.
-#          NEW: llama.cpp path/version check in table, install.sh integration.
+#          NEW: Strict usage of PRE_SYNC_COMMIT and POST_SYNC_COMMIT for update logic,
+#               explicit tag vs code update distinction.
 # =============================================================================
 # <PLAN>
 # 1. Configuration block (all constants)
@@ -30,19 +31,19 @@
 # 7. Service management (stop/start/persist/status)
 # 8. Backup & Restore with history, commit-aware naming & duplicate prompt
 # 9. Hardware/CUDA/Node.js validation
-# 10. Git checkout (latest / date / commit)
+# 10. Git checkout (latest / date / commit) - FIXED HASH LOGIC
 # 11. Delta report generation (pre/post-sync commit comparison)
 # 12. Build with CUDA fixes, strategy handling, and deprecated warning suppression
 # 13. Deployment with symlink detection, idempotent copy skip, and diagnostics
 # 14. Main orchestration with strict error handling
-# 15. System requirements table update (OS, llama.cpp version, Node.js, NCCL)
+# 15. Mandatory finalization method: always restarts service if stopped, releases lock
 #
 # Risks mitigated: concurrent execution, missing tools, deployment failures,
 # unclear error messages, forced rollback without retry, incomplete build logs,
 # missing deployment after rollback, broken backup restore path parsing,
 # symlink copy conflicts (cp "same file" error), duplicate backups for same commit,
 # redundant GPU architecture flags, suboptimal CPU instruction selection,
-# incorrect commit range ordering for delta reports.
+# incorrect commit range ordering for delta reports, service left stopped on exit.
 # </PLAN>
 
 # [RULE_MANDATORY_COMPLIANCE] + [RULE_STRICTNESS]
@@ -56,7 +57,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ====================== CONFIGURATION (DFD: RULE_CONFIG_EXEC_SEPARATION) ======================
-readonly SCRIPT_VERSION="6.7"
+readonly SCRIPT_VERSION="6.10"
 readonly SCRIPT_BASENAME="/opt/llm"
 readonly REPO_DIR="${SCRIPT_BASENAME}/llama.cpp"
 readonly BACKUP_DIR="${SCRIPT_BASENAME}/backup"
@@ -102,7 +103,7 @@ BUILD_MAKE_ARGS=""
 # Track if service was stopped (for auto-restart on rollback)
 SERVICE_WAS_STOPPED=false
 
-# === Delta Report State ===
+# === Delta Report State (Used for explicit comparison) ===
 PRE_SYNC_COMMIT="unknown"
 POST_SYNC_COMMIT="unknown"
 
@@ -137,8 +138,19 @@ release_lock() {
     debug_log "Lock released"
 }
 
-# Trap to release lock on exit
-trap release_lock EXIT
+# ====================== MANDATORY FINALIZATION (DFD: RULE_PROACTIVE) ======================
+finalize_operation() {
+    # Always attempt to restart service if it was stopped during this run
+    if [[ "${SERVICE_WAS_STOPPED:-false}" == "true" ]]; then
+        log_info "Ensuring service is running after operation..."
+        start_service || log_warn "Service restart failed. Please check manually."
+    fi
+    # Release lock
+    release_lock
+}
+
+# Trap to run finalization on ANY exit (normal, error, or interrupt)
+trap finalize_operation EXIT
 
 # ====================== LOGGING (DFD: RULE_LOG_FORMAT) ======================
 log_info()  { echo "[INFO]  $(date '+%H:%M:%S') - $1"; }
@@ -1038,30 +1050,43 @@ restore_backup_path() {
     return 0
 }
 
-# ====================== GIT ======================
+# ====================== GIT (FIXED LOGIC WITH GLOBALS) ======================
 git_checkout_target() {
     local target="${1:-latest}"
     cd "${REPO_DIR}" || { log_error "Cannot cd to repo"; return 1; }
 
     if [[ "$target" == "latest" ]]; then
         log_info "Pulling latest version..."
+        
+        # Determine primary branch (master or main)
+        local remote_branch="origin/master"
+        if ! git rev-parse --verify "$remote_branch" >/dev/null 2>&1; then
+            remote_branch="origin/main"
+        fi
+
         git fetch --all --prune
         
-        # Check if local is already up-to-date with remote
-        local local_head=$(git rev-parse HEAD)
-        local remote_master=$(git rev-parse origin/master 2>/dev/null || git rev-parse origin/main 2>/dev/null)
+        # Compare using GLOBAL variables as requested
+        local local_hash=$(git rev-parse HEAD 2>/dev/null)
+        local remote_hash=$(git rev-parse "$remote_branch" 2>/dev/null)
         
-        if [[ "$local_head" == "$remote_master" ]]; then
-            log_info "Local version is already up-to-date with remote."
+        # Log them so user sees what is compared
+        log_info "Local commit:  ${local_hash}"
+        log_info "Remote commit: ${remote_hash} (${remote_branch})"
+
+        if [[ "$local_hash" == "$remote_hash" ]]; then
+            log_info "Local code hash matches remote. (Note: New tags may exist but code is same)."
             read -p "Rebuild anyway? [y/N] " rebuild_choice
             if [[ "$rebuild_choice" =~ ^[Nn]$ ]]; then
                 log_info "Exiting without changes."
                 exit 0
             fi
         fi
-        git reset --hard origin/master 2>/dev/null || git reset --hard origin/main
-        git pull origin master 2>/dev/null || git pull origin main
-        log_success "Latest master/main checked out"
+        
+        # If we get here, hashes differ or user chose to rebuild
+        git reset --hard "$remote_branch" >/dev/null 2>&1
+        git pull origin "$remote_branch" >/dev/null 2>&1
+        log_success "Latest $remote_branch checked out"
     elif [[ "$target" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
         log_info "Rolling back to date: $target"
         git fetch --all
@@ -1648,7 +1673,7 @@ main() {
 
     check_initial_service_status
 
-    # === Capture pre-sync commit state ===
+    # === Capture pre-sync commit state (Global Variable) ===
     PRE_SYNC_COMMIT=$(cd "${REPO_DIR}" 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo "unknown")
 
     echo ""

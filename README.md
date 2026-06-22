@@ -41,11 +41,10 @@ Full automation of `llama.cpp` update, backup, rollback, and system recovery for
 - **Smart Build Strategy** — CPU-based optimization selection (AVX512/AVX2/F16C) with interactive override
 - **Symlink-Aware Deployment** — Idempotent copy skip for symlinks pointing to build directory
 - **Commit-Aware Backup Naming** — Backup names include commit hash and commit date with duplicate detection
-- **GPU Architecture Deduplication** — Unique CUDA architectures detection to avoid redundant build flags
 - **Clean Build Log Format** — Structured build history with full compilation flags, system info, and commit metadata
 - **Recursive Deploy Retry** — Interactive retry mechanism with detailed diagnostics for deployment failures
 - **Already Up-to-Date Check** — Detects when local version matches remote and offers skip option
-- **Install.sh Integration** — Automatic `llama.cpp` repository installation if missing
+- **Install.sh Integration** — Automatic `llama.cpp` installation if missing: clone repository, create service, download llm-model.
 
 ---
 ### Key Paths
@@ -97,10 +96,10 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 
 ```text
 ==================================================
-    LLM Update Script v6.2 — DFD Compliant
+    LLM Update Script v6.10 — DFD Compliant
     Repo: /opt/llm/llama.cpp
 ==================================================
-[INFO]  00:18:51 - Loaded service config: llm.service
+[INFO]  22:55:24 - Loaded service config: llm-server.service
 
 === NVIDIA P102-100 Compatibility Checklist ===
 +---------------+------------+--------+
@@ -115,54 +114,70 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 | Component        | Version      | Status |
 +------------------+--------------+--------+
 | OS               | Ubuntu 24.04 | OK     |
+| llama.cpp        | 0ef6f06d     | OK     |
 | Node.js          | v24.16.0     | OK     |
 | npm              | 11.13.0      | OK     |
 | NCCL (multi-GPU) | OK           | OK     |
 +------------------+--------------+--------+
-[INFO]  00:18:51 - Checking build tools...
-[OK]    00:18:51 - ✓ All build tools are installed
-[INFO]  00:18:51 - Detecting NVIDIA GPUs...
-[OK]    00:18:51 - ✓ Detected 6 GPU(s). Unique Architectures: 61;89
-[INFO]  00:18:52 - Service llm.service is currently ACTIVE
-[OK]    00:18:52 - ✓ Service name saved: llm.service
+[INFO]  22:55:24 - Checking build tools...
+[OK]    22:55:24 - ✓ All build tools are installed
+[INFO]  22:55:24 - Detecting NVIDIA GPUs...
+[OK]    22:55:24 - ✓ Detected 6 GPU(s). Unique Architectures: 61;89
+[INFO]  22:55:25 - Service llm-server.service is currently ACTIVE
+[OK]    22:55:25 - ✓ Service name saved: llm-server.service
 
 Select action:
-  [1] Update / Build
+  [1] Update / Build / Deploy
   [2] Rollback to previous build
   [3] Exit
 Selection: 1
 
 === STEP: Updating llama.cpp ===
 
-[INFO]  00:20:50 - Stopping service llm.service...
-[WARN]  00:21:01 - ⚠️  A backup for commit 4988f6e8 already exists:
-[WARN]  00:21:01 - ⚠️    backup_2026-06-14_09-30-26_4988f6e8_2026-06-13_10-49-00-0700
-Create another backup for this commit? [y/N] n
-[INFO]  00:21:24 - Skipping backup creation as requested.
+[INFO]  22:55:28 - Stopping service llm-server.service...
+[INFO]  22:55:29 - Creating backup → /opt/llm/backup/backup_2026-06-22_22-55-29_0ef6f06d_2026-06-22_09-18-31+0530
+[OK]    22:55:41 - ✓ Backup created: backup_2026-06-22_22-55-29_0ef6f06d_2026-06-22_09-18-31+0530
 
-Select version to build:
+Select version to build or redeploy:
   [1] Latest (master)
   [2] By date (YYYY-MM-DD)
   [3] By commit
-  [4] Rebuild current version (4988f6e8)
-  [5] Exit
+  [4] Rebuild current version (0ef6f06d)
+  [5] Redeploy current version (0ef6f06d)
+  [6] Exit
 Choice [1]: 1
-[INFO]  00:23:31 - Pulling latest version...
-remote: Enumerating objects: 143, done.
-remote: Counting objects: 100% (70/70), done.
-remote: Compressing objects: 100% (17/17), done.
-remote: Total 23 (delta 17), reused 12 (delta 6), pack-reused 0 (from 0)
-Распаковка объектов: 100% (23/23), 5.56 КиБ | 355.00 КиБ/с, готово.
+[INFO]  22:55:45 - Pulling latest version...
+remote: Enumerating objects: 45, done.
+remote: Counting objects: 100% (35/35), done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 5 (delta 4), reused 2 (delta 1), pack-reused 0 (from 0)
+Распаковка объектов: 100% (5/5), 1.60 КиБ | 546.00 КиБ/с, готово.
 Из https://github.com/ggerganov/llama.cpp
-   4988f6e8..6e14286e  master     -> origin/master
- * [новая метка]       b9631      -> b9631
- * [новая метка]       b9627      -> b9627
- * [новая метка]       b9628      -> b9628
- * [новая метка]       b9630      -> b9630
-Указатель HEAD сейчас на коммите 6e14286e cli : fix not copying preserved tokens (#24258)
-Уже актуально.
-[OK]    00:23:34 - ✓ Latest master/main checked out
-[INFO]  00:23:34 - Determining optimal build strategy based on CPU capabilities...
+   0ef6f06d..d0f9d2e5  master     -> origin/master
+ * [новая метка]       b9755      -> b9755
+ * [новая метка]       b9756      -> b9756
+[INFO]  22:55:48 - Local commit:  0ef6f06d553b160d8fc1fba38f5848c7940873a2
+[INFO]  22:55:48 - Remote commit: d0f9d2e5ac5d4f51763755958b8f353fed01aaa2 (origin/master)
+[OK]    22:55:49 - ✓ Latest origin/master checked out
+
+Generate delta report between 0ef6f06d553b160d8fc1fba38f5848c7940873a2 and d0f9d2e5ac5d4f51763755958b8f353fed01aaa2? [y/N] y
+Commits per chunk (default 20): 
+[INFO]  22:55:55 - Running delta generator...
+git_delta.sh 1.0.17 (2024-05-20)
+[INFO] DFD_GitDelta: Config: --start set to 0ef6f06d553b160d8fc1fba38f5848c7940873a2
+[INFO] DFD_GitDelta: Config: --end set to d0f9d2e5ac5d4f51763755958b8f353fed01aaa2
+[INFO] DFD_GitDelta: Config: --remote set to https://github.com/ggerganov/llama.cpp
+[INFO] DFD_GitDelta: Remote: Updated origin to https://github.com/ggerganov/llama.cpp
+[INFO] DFD_GitDelta: Fetching remote updates...
+[INFO] DFD_GitDelta: Testing git log range: 0ef6f06d553b160d8fc1fba38f5848c7940873a2..d0f9d2e5ac5d4f51763755958b8f353fed01aaa2
+[INFO] DFD_GitDelta: Successfully resolved 1 commit(s).
+[INFO] DFD_GitDelta: Total commits to process: 1
+[INFO] DFD_GitDelta: Generated: 20260622_225556.txt (1 commits)
+[INFO] DFD_GitDelta: ✅ Completed. Created 1 file(s).
+[INFO] DFD_GitDelta:    Total net growth: +4 lines
+[INFO] DFD_GitDelta:    Delta saved to: /opt/llm/llama.cpp/reports
+[OK]    22:55:56 - ✓ Delta report generation completed.
+[INFO]  22:55:56 - Determining optimal build strategy based on CPU capabilities...
 
 Processor: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
 Cores: 56
@@ -174,59 +189,247 @@ CPU Capabilities detected:
    AVX512_BF16   : false
    F16C          : false
 
-[INFO]  00:23:34 - AVX2-capable CPU detected → GGML_NATIVE=ON
+[INFO]  22:55:56 - AVX2-capable CPU detected → GGML_NATIVE=ON
 Use this configuration? [Y/n] y
-[INFO]  00:24:25 - Final decision: GGML_NATIVE=ON
+[INFO]  22:56:00 - Final decision: GGML_NATIVE=ON
 
 Multiple GPU architectures detected: 61;89
 Please select build strategy:
   [1] Single binary with all architectures (Default)
   [2] Separate binaries for each architecture + Universal binary
 Choice [1]: 2
-[INFO]  00:24:49 - Multi-architecture build mode enabled.
-[INFO]  00:24:49 - Starting build...
-[INFO]  00:24:49 - Using nvcc: /usr/local/cuda-12.8/bin/nvcc
-[INFO]  00:24:49 - Building with architectures: 61;89
+[INFO]  22:56:07 - Multi-architecture build mode enabled.
+[INFO]  22:56:07 - Starting build...
+[INFO]  22:56:08 - Using nvcc: /usr/local/cuda-12.8/bin/nvcc
+[INFO]  22:56:08 - Building with architectures: 61;89
+[INFO]  22:56:08 - Build strategy: (GGML_NATIVE=ON)
+[INFO]  22:56:08 - Starting primary compilation...
+[INFO]  22:56:08 - Build timestamp: 2026-06-22 22:56:08
+[INFO]  22:56:08 - Commit: d0f9d2e5 (2026-06-22 10:55:28 +0200)
+[INFO]  22:56:08 - CMake flags: -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc         -DCMAKE_CUDA_ARCHITECTURES=61;89         -DGGML_CUDA=ON         -DGGML_CURL=ON         -DGGML_CUDA_FA_ALL_QUANTS=ON         -DGGML_NATIVE=ON         -DCMAKE_CUDA_FLAGS=-Wno-deprecated-gpu-targets         -DCMAKE_BUILD_TYPE=Release -DGGML_AVX2=ON -DGGML_F16C=ON
+[INFO]  22:56:08 - Make flags: -j56 --target llama-cli llama-server llama-gguf-split
+-- The C compiler identification is GNU 13.3.0
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+CMAKE_BUILD_TYPE=Release
+-- Found Git: /usr/bin/git (found version "2.43.0") 
+-- The ASM compiler identification is GNU
+-- Found assembler: /usr/bin/cc
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- Warning: ccache not found - consider installing it for faster compilation or disable this warning with GGML_CCACHE=OFF
+-- CMAKE_SYSTEM_PROCESSOR: x86_64
+-- GGML_SYSTEM_ARCH: x86
+-- Found OpenMP_C: -fopenmp (found version "4.5") 
+-- Found OpenMP_CXX: -fopenmp (found version "4.5") 
+-- Found OpenMP: TRUE (found version "4.5")  
+-- Including CPU backend
+-- x86 detected
+-- Adding CPU backend variant ggml-cpu: -march=native 
+-- Found CUDAToolkit: /usr/local/cuda-12.8/targets/x86_64-linux/include (found version "12.8.93") 
+-- CUDA Toolkit found
+-- The CUDA compiler identification is NVIDIA 12.8.93
+-- Detecting CUDA compiler ABI info
+-- Detecting CUDA compiler ABI info - done
+-- Check for working CUDA compiler: /usr/local/cuda-12.8/bin/nvcc - skipped
+-- Detecting CUDA compile features
+-- Detecting CUDA compile features - done
+-- Using CMAKE_CUDA_ARCHITECTURES=61;89 CMAKE_CUDA_ARCHITECTURES_NATIVE=89-real;61-real
+-- Found NCCL: /usr/lib/x86_64-linux-gnu/libnccl.so  
+-- CUDA host compiler is GNU 13.3.0
+-- Including CUDA backend
+-- ggml version: 0.15.2
+-- ggml commit:  d0f9d2e5
+-- Found OpenSSL: /usr/lib/x86_64-linux-gnu/libcrypto.so (found version "3.0.13")  
+-- Performing Test OPENSSL_VERSION_SUPPORTED
+-- Performing Test OPENSSL_VERSION_SUPPORTED - Success
+-- OpenSSL found: 3.0.13
+-- Generating embedded license file for target: llama-app
+-- Configuring done (6.1s)
+-- Generating done (0.3s)
+-- Build files have been written to: /opt/llm/llama.cpp/build
 
 ...
 ...
 ...
+
+[100%] Built target llama-gguf-split
+[OK]    23:03:45 - ✓ Primary build completed successfully
+
+=== STEP: Building specific architecture binaries... ===
+
+[INFO]  23:03:45 - Building for architecture: 61
+CMAKE_BUILD_TYPE=Release
+-- Warning: ccache not found - consider installing it for faster compilation or disable this warning with GGML_CCACHE=OFF
+-- CMAKE_SYSTEM_PROCESSOR: x86_64
+-- GGML_SYSTEM_ARCH: x86
+-- Including CPU backend
+-- x86 detected
+-- Adding CPU backend variant ggml-cpu: -march=native 
+-- CUDA Toolkit found
+-- Using CMAKE_CUDA_ARCHITECTURES=61 CMAKE_CUDA_ARCHITECTURES_NATIVE=89-real;61-real
+-- CUDA host compiler is GNU 13.3.0
+-- Including CUDA backend
+-- ggml version: 0.15.2
+-- ggml commit:  d0f9d2e5
+-- OpenSSL found: 3.0.13
+-- Generating embedded license file for target: llama-app
+-- Configuring done (0.4s)
+-- Generating done (0.4s)
+-- Build files have been written to: /opt/llm/llama.cpp/build_61
+[  0%] Building CXX object common/CMakeFiles/llama-common-base.dir/build-info.cpp.o
+[  1%] Built target llama-ui-embed
+[  3%] Building C object ggml/src/CMakeFiles/ggml-base.dir/ggml.c.o
+[  3%] Built target cpp-httplib
+[  3%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml.cpp.o
+[  3%] Building C object ggml/src/CMakeFiles/ggml-base.dir/ggml-alloc.c.o
+[  3%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-opt.cpp.o
+[  3%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-backend.cpp.o
+[  3%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-backend-meta.cpp.o
+[  4%] Building C object ggml/src/CMakeFiles/ggml-base.dir/ggml-quants.c.o
+[  4%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/gguf.cpp.o
+[  4%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-threading.cpp.o
+[  4%] Provisioning UI assets
+-- UI: npm output up-to-date, skipping build
+[  4%] Linking CXX static library libllama-common-base.a
+[  4%] Built target llama-common-base
+-- UI: gzip compression applied (/opt/llm/llama.cpp/build_61/tools/ui/dist/_gzip)
+[  4%] Built target llama-ui-assets
+[  4%] Built target llama-ui
+[  4%] Linking CXX shared library ../../bin/libggml-base.so
+[  4%] Built target ggml-base
+[  4%] Linking CXX shared library ../../bin/libggml-cpu.so
+[  7%] Built target ggml-cpu
+[  7%] Linking CUDA shared library ../../../bin/libggml-cuda.so
+[ 46%] Built target ggml-cuda
+[ 46%] Linking CXX shared library ../../bin/libggml.so
+[ 46%] Built target ggml
+[ 46%] Linking CXX shared library ../bin/libllama.so
+[ 81%] Built target llama
+[ 81%] Linking CXX shared library ../../bin/libmtmd.so
+[ 81%] Linking CXX shared library ../bin/libllama-common.so
+[ 89%] Built target mtmd
+[ 96%] Built target llama-common
+[ 96%] Building CXX object tools/server/CMakeFiles/server-context.dir/server-tools.cpp.o
+[ 96%] Linking CXX static library libserver-context.a
+[ 98%] Built target server-context
+[ 98%] Linking CXX shared library ../../bin/libllama-server-impl.so
+[100%] Built target llama-server-impl
+[100%] Linking CXX executable ../../bin/llama-server
+[100%] Built target llama-server
+[OK]    23:04:14 - ✓ Created specific binary: llama-server-61
+[INFO]  23:04:14 - Building for architecture: 89
+CMAKE_BUILD_TYPE=Release
+-- Warning: ccache not found - consider installing it for faster compilation or disable this warning with GGML_CCACHE=OFF
+-- CMAKE_SYSTEM_PROCESSOR: x86_64
+-- GGML_SYSTEM_ARCH: x86
+-- Including CPU backend
+-- x86 detected
+-- Adding CPU backend variant ggml-cpu: -march=native 
+-- CUDA Toolkit found
+-- Using CMAKE_CUDA_ARCHITECTURES=89 CMAKE_CUDA_ARCHITECTURES_NATIVE=89-real;61-real
+-- CUDA host compiler is GNU 13.3.0
+-- Including CUDA backend
+-- ggml version: 0.15.2
+-- ggml commit:  d0f9d2e5
+-- OpenSSL found: 3.0.13
+-- Generating embedded license file for target: llama-app
+-- Configuring done (0.4s)
+-- Generating done (0.4s)
+-- Build files have been written to: /opt/llm/llama.cpp/build_89
+[  0%] Building CXX object common/CMakeFiles/llama-common-base.dir/build-info.cpp.o
+[  1%] Built target llama-ui-embed
+[  1%] Built target cpp-httplib
+[  1%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml.cpp.o
+[  1%] Building C object ggml/src/CMakeFiles/ggml-base.dir/ggml-alloc.c.o
+[  3%] Building C object ggml/src/CMakeFiles/ggml-base.dir/ggml.c.o
+[  3%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-opt.cpp.o
+[  3%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-backend-meta.cpp.o
+[  3%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-backend.cpp.o
+[  4%] Building C object ggml/src/CMakeFiles/ggml-base.dir/ggml-quants.c.o
+[  4%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/gguf.cpp.o
+[  4%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-threading.cpp.o
+[  4%] Provisioning UI assets
+-- UI: npm output up-to-date, skipping build
+[  4%] Linking CXX static library libllama-common-base.a
+[  4%] Built target llama-common-base
+-- UI: gzip compression applied (/opt/llm/llama.cpp/build_89/tools/ui/dist/_gzip)
+[  4%] Built target llama-ui-assets
+[  4%] Built target llama-ui
+[  4%] Linking CXX shared library ../../bin/libggml-base.so
+[  4%] Built target ggml-base
+[  4%] Linking CXX shared library ../../bin/libggml-cpu.so
+[  7%] Built target ggml-cpu
+[  7%] Linking CUDA shared library ../../../bin/libggml-cuda.so
+[ 46%] Built target ggml-cuda
+[ 46%] Linking CXX shared library ../../bin/libggml.so
+[ 46%] Built target ggml
+[ 46%] Linking CXX shared library ../bin/libllama.so
+[ 81%] Built target llama
+[ 81%] Linking CXX shared library ../bin/libllama-common.so
+[ 81%] Linking CXX shared library ../../bin/libmtmd.so
+[ 89%] Built target mtmd
+[ 96%] Built target llama-common
+[ 96%] Building CXX object tools/server/CMakeFiles/server-context.dir/server-tools.cpp.o
+[ 96%] Linking CXX static library libserver-context.a
+[ 98%] Built target server-context
+[ 98%] Linking CXX shared library ../../bin/libllama-server-impl.so
+[100%] Built target llama-server-impl
+[100%] Linking CXX executable ../../bin/llama-server
+[100%] Built target llama-server
+[OK]    23:04:42 - ✓ Created specific binary: llama-server-89
 
 ==================================================
 MULTI-ARCHITECTURE BUILD SUMMARY
 ==================================================
 Universal binary (all archs) deployed:
-From /opt/llm/llama.cpp/build/bin/llama-server to /opt/llm/llama-server
+from /opt/llm/llama.cpp/build/bin/llama-server to /opt/llm/llama-server
 To deploy specific architecture binaries, use the following commands:
   cp /opt/llm/llama.cpp/build_61/bin/llama-server-61 /opt/llm
   cp /opt/llm/llama.cpp/build_89/bin/llama-server-89 /opt/llm
 ==================================================
-[OK]    00:34:54 - ✓ Build completed successfully
-[INFO]  00:34:54 - Starting deployment...
-[INFO]  00:34:55 - Deploying binaries from /opt/llm/llama.cpp/build/bin to /opt/llm
-[INFO]  00:34:55 - Skipped copy: llama-server is a valid symlink to build dir
-[OK]    00:34:55 - ✓ Binaries deployed to /opt/llm (3 files)
-[INFO]  00:34:55 - Verifying deployed binaries...
-[OK]    00:34:55 - ✓ Binary verification passed (--version)
-[INFO]  00:34:55 - Build record saved to /opt/llm/backup/build_history.log
-[INFO]  00:34:55 - Starting service llm.service...
-[OK]    00:34:59 - ✓ Service started successfully
-[INFO]  00:34:59 - Displaying service status...
+[OK]    23:04:42 - ✓ Build completed successfully
+[INFO]  23:04:42 - Starting deployment...
+[INFO]  23:04:44 - Deploying binaries from /opt/llm/llama.cpp/build/bin to /opt/llm
+[INFO]  23:04:44 - Skipped copy: llama-server is a valid symlink to build dir
+[OK]    23:04:44 - ✓ Binaries deployed to /opt/llm (5 files)
+[INFO]  23:04:44 - Verifying deployed binaries...
+[OK]    23:04:45 - ✓ Binary verification passed (--version)
+[INFO]  23:04:45 - Build record saved to /opt/llm/backup/build_history.log
+[INFO]  23:04:45 - Starting service llm-server.service...
+[OK]    23:04:48 - ✓ Service started successfully
+[INFO]  23:04:48 - Displaying service status...
 
-=== SERVICE STATUS: llm.service ===
+=== SERVICE STATUS: llm-server.service ===
 
-● llm.service - LLM Inference Server
-     Loaded: loaded (/etc/systemd/system/llm.service; enabled; preset: enabled)
-     Active: active (running) since Mon 2026-06-15 00:34:56 +12; 3s ago
-   Main PID: 729540 (run_llm.sh)
-      Tasks: 61 (limit: 629145)
-     Memory: 144.4M (peak: 153.0M)
-        CPU: 2.943s
-     CGroup: /system.slice/llm.service
-             ├─729540 /bin/bash /opt/llm/run_llm.sh
-             └─729541 /opt/llm/llama-server -m /mnt/Models/...
-        systemd[1]: Started llm.service - LLM Inference Server.
-[OK]    00:34:59 - ✓ Operation completed successfully
+● llm-server.service - LLM Inference Server
+     Loaded: loaded (/etc/systemd/system/llm-server.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2026-06-22 23:04:45 +12; 3s ago
+   Main PID: 1281302 (run_llm.sh)
+      Tasks: 70 (limit: 629145)
+     Memory: 693.6M (peak: 693.6M)
+        CPU: 2.944s
+     CGroup: /system.slice/llm-server.service
+             ├─1281302 /bin/bash /opt/llm/run_llm.sh
+             └─1281303 /opt/llm/llama-server -m /mnt/Models/Qwen3.5-122B-A10B-UD-IQ1_M/Qwen3.5-122B-A10B-UD-IQ1_M.gguf --host 0.0.0.0 --port 8085 --jinja -a sk-no-key-required -fa on --fit on --fit-target 512,256,256,256,256 --context-shift --spec-type ngram-mod --spec-draft-n-max 6 --spec-draft-p-min 0.5 --cache-ram 1024 --cache-prompt --temp 0.6 --top-k 0 --top-p 1.0 --repeat_penalty 1.0 --repeat_last_n 64 --min-p 0.05 --ctx-size 262144 --mlock --no-mmap --batch-size 1024 -ub 256 --cache-type-k q4_1 --cache-type-v q4_1 --parallel 1 -n 65536
+
+        23:04:45 systemd[1]: Started llm-server.service - LLM Inference Server.
+
+[OK]    23:04:48 - ✓ Operation completed successfully
+[INFO]  23:04:48 - Ensuring service is running after operation...
+[INFO]  23:04:48 - Starting service llm-server.service...
+[OK]    23:04:51 - ✓ Service started successfully
+
 ```
 
 ## Example build_history.log
@@ -246,6 +449,88 @@ Full Compilation Flags:
   CMake flags: -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc         -DCMAKE_CUDA_ARCHITECTURES=61;89         -DGGML_CUDA=ON         -DGGML_CURL=ON         -DGGML_CUDA_FA_ALL_QUANTS=ON         -DGGML_NATIVE=ON         -DCMAKE_CUDA_FLAGS=-Wno-deprecated-gpu-targets         -DCMAKE_BUILD_TYPE=Release -DGGML_AVX2=ON -DGGML_F16C=ON
   Make flags: -j56 --target llama-cli llama-server llama-gguf-split
 ```
+## Example delta report (diff)
+opt/llm/llama.cpp/reports/20260622_225556.txt
+```text
+Git Changes Summary — llama.cpp
+Date: 2026-06-22 22:55:56
+Part: 1/1 (commits 1-1 of 1)
+Ref: 0ef6f06d553b160d8fc1fba38f5848c7940873a2 → d0f9d2e5ac5d4f51763755958b8f353fed01aaa2
+==========================================================================================
+
+Commits in this file: 1
+
+==========================================================================================
+Commit 1/1
+Hash : d0f9d2e5ac5d4f51763755958b8f353fed01aaa2
+Author: Pascal
+Date : 2026-06-22
+Subject : server: fix edit_file crash on append at end of file (line_start -1) (#24893)
+
+   • tools/server/server-tools.cpp
+--- DIFF ---
+commit d0f9d2e5ac5d4f51763755958b8f353fed01aaa2
+Author: Pascal <admin@serveurperso.com>
+Date:   Mon Jun 22 10:55:28 2026 +0200
+
+    server: fix edit_file crash on append at end of file (line_start -1) (#24893)
+    
+    line_start -1 normalized to n+1, so append inserted at lines.begin() + n + 1,
+    one past end() -> heap-buffer-overflow in vector::_M_range_insert.
+    
+    Normalize -1 to n (insert at end()), restrict -1 to append mode and reject it
+    for replace/delete instead of silently clobbering the last line. Parenthesize
+    the insert offset so empty-file append computes the position as int first,
+    avoiding a transient begin() - 1 on a null vector data pointer.
+
+diff --git a/tools/server/server-tools.cpp b/tools/server/server-tools.cpp
+index 95662d4e..790ed85a 100644
+--- a/tools/server/server-tools.cpp
++++ b/tools/server/server-tools.cpp
+@@ -569,9 +569,13 @@ struct server_tool_edit_file : server_tool {
+             }
+             int n = (int) lines.size();
+             if (e.line_start == -1) {
+-                // -1 means end of file; line_end is ignored — normalize to point past last line
+-                e.line_start = n + 1;
+-                e.line_end   = n + 1;
++                // -1 targets end of file -> valid for append only; line_end is ignored
++                if (e.mode != "append") {
++                    return {{"error", "line_start -1 (end of file) is only valid for append mode"}};
++                }
++                // append at end of file: insert position is the current line count
++                e.line_start = n;
++                e.line_end   = n;
+             } else {
+                 if (e.line_start < 1 || e.line_end < e.line_start) {
+                     return {{"error", string_format("invalid line range [%d, %d]", e.line_start, e.line_end)}};
+@@ -612,8 +616,8 @@ struct server_tool_edit_file : server_tool {
+             } else if (e.mode == "delete") {
+                 lines.erase(lines.begin() + idx_start, lines.begin() + idx_end + 1);
+             } else { // append
+-                // idx_end + 1 may equal lines.size() when line_start == -1 (end of file)
+-                lines.insert(lines.begin() + idx_end + 1, new_lines.begin(), new_lines.end());
++                // insert after idx_end; idx_end + 1 == lines.size() for end-of-file append
++                lines.insert(lines.begin() + (idx_end + 1), new_lines.begin(), new_lines.end());
+             }
+         }
+ 
+
+Changed files: 1
+
+==========================================================================================
+SUMMARY FOR GROUP 1/1
+==========================================================================================
+Commits in group: 1
+Files changed:    1
+Lines added:      9
+Lines deleted:    5
+Net growth:       4 lines
+```
+
+
+
+
 ## BPMN Process Flow
 
 ```mermaid

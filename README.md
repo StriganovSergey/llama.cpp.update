@@ -99,7 +99,7 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
     LLM Update Script v6.10 — DFD Compliant
     Repo: /opt/llm/llama.cpp
 ==================================================
-[INFO]  22:55:24 - Loaded service config: llm-server.service
+[INFO]  22:55:24 - Loaded service config: llm.service
 
 === NVIDIA P102-100 Compatibility Checklist ===
 +---------------+------------+--------+
@@ -123,8 +123,8 @@ $ sudo bash /home/user/AI_script/llama.cpp.update/update.sh
 [OK]    22:55:24 - ✓ All build tools are installed
 [INFO]  22:55:24 - Detecting NVIDIA GPUs...
 [OK]    22:55:24 - ✓ Detected 6 GPU(s). Unique Architectures: 61;89
-[INFO]  22:55:25 - Service llm-server.service is currently ACTIVE
-[OK]    22:55:25 - ✓ Service name saved: llm-server.service
+[INFO]  22:55:25 - Service llm.service is currently ACTIVE
+[OK]    22:55:25 - ✓ Service name saved: llm.service
 
 Select action:
   [1] Update / Build / Deploy
@@ -134,7 +134,7 @@ Selection: 1
 
 === STEP: Updating llama.cpp ===
 
-[INFO]  22:55:28 - Stopping service llm-server.service...
+[INFO]  22:55:28 - Stopping service llm.service...
 [INFO]  22:55:29 - Creating backup → /opt/llm/backup/backup_2026-06-22_22-55-29_0ef6f06d_2026-06-22_09-18-31+0530
 [OK]    22:55:41 - ✓ Backup created: backup_2026-06-22_22-55-29_0ef6f06d_2026-06-22_09-18-31+0530
 
@@ -406,28 +406,28 @@ To deploy specific architecture binaries, use the following commands:
 [INFO]  23:04:44 - Verifying deployed binaries...
 [OK]    23:04:45 - ✓ Binary verification passed (--version)
 [INFO]  23:04:45 - Build record saved to /opt/llm/backup/build_history.log
-[INFO]  23:04:45 - Starting service llm-server.service...
+[INFO]  23:04:45 - Starting service llm.service...
 [OK]    23:04:48 - ✓ Service started successfully
 [INFO]  23:04:48 - Displaying service status...
 
-=== SERVICE STATUS: llm-server.service ===
+=== SERVICE STATUS: llm.service ===
 
-● llm-server.service - LLM Inference Server
-     Loaded: loaded (/etc/systemd/system/llm-server.service; enabled; preset: enabled)
+● llm.service - LLM Inference Server
+     Loaded: loaded (/etc/systemd/system/llm.service; enabled; preset: enabled)
      Active: active (running) since Mon 2026-06-22 23:04:45 +12; 3s ago
    Main PID: 1281302 (run_llm.sh)
       Tasks: 70 (limit: 629145)
      Memory: 693.6M (peak: 693.6M)
         CPU: 2.944s
-     CGroup: /system.slice/llm-server.service
+     CGroup: /system.slice/llm.service
              ├─1281302 /bin/bash /opt/llm/run_llm.sh
              └─1281303 /opt/llm/llama-server -m /mnt/Models/Qwen3.5-122B-A10B-UD-IQ1_M/Qwen3.5-122B-A10B-UD-IQ1_M.gguf --host 0.0.0.0 --port 8085 --jinja -a sk-no-key-required -fa on --fit on --fit-target 512,256,256,256,256 --context-shift --spec-type ngram-mod --spec-draft-n-max 6 --spec-draft-p-min 0.5 --cache-ram 1024 --cache-prompt --temp 0.6 --top-k 0 --top-p 1.0 --repeat_penalty 1.0 --repeat_last_n 64 --min-p 0.05 --ctx-size 262144 --mlock --no-mmap --batch-size 1024 -ub 256 --cache-type-k q4_1 --cache-type-v q4_1 --parallel 1 -n 65536
 
-        23:04:45 systemd[1]: Started llm-server.service - LLM Inference Server.
+        23:04:45 systemd[1]: Started llm.service - LLM Inference Server.
 
 [OK]    23:04:48 - ✓ Operation completed successfully
 [INFO]  23:04:48 - Ensuring service is running after operation...
-[INFO]  23:04:48 - Starting service llm-server.service...
+[INFO]  23:04:48 - Starting service llm.service...
 [OK]    23:04:51 - ✓ Service started successfully
 
 ```
